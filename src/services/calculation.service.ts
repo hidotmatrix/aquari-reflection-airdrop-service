@@ -54,14 +54,14 @@ export async function calculateRewards(
     await db.collection<SystemConfig>('config').insertOne(systemConfig);
   }
 
-  // Create distribution record
+  // Create distribution record (reward pool is TBD - admin sets on approval)
   const distribution = createDistribution({
     weekId,
     startSnapshotId,
     endSnapshotId,
     config: {
       minBalance: config.MIN_BALANCE,
-      rewardPool: config.REWARD_POOL,
+      rewardPool: '0', // TBD - admin sets this on approval
       rewardToken: config.REWARD_TOKEN,
       batchSize: config.BATCH_SIZE,
     },

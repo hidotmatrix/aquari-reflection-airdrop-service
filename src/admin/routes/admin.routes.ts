@@ -33,6 +33,8 @@ router.get('/search', ctrl.searchByAddress);
 router.post('/trigger/snapshot', ctrl.triggerSnapshot);
 router.post('/trigger/calculate', ctrl.triggerCalculation);
 router.post('/trigger/full-flow', ctrl.triggerFullFlow);
+router.post('/trigger/airdrop', ctrl.triggerAirdrop);
+router.post('/approve-airdrop', ctrl.approveAndExecuteAirdrop);
 
 // Job status and logs
 router.get('/jobs/status', ctrl.getJobStatusEndpoint);

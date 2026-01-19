@@ -378,14 +378,235 @@ async function runCalculationJob(ctx: JobContext, weekId: string): Promise<void>
 }
 
 // ═══════════════════════════════════════════════════════════
-// Airdrop Job (placeholder)
+// Airdrop Job - Process batches and send/simulate transactions
 // ═══════════════════════════════════════════════════════════
 
+interface Batch {
+  _id?: ObjectId;
+  distributionId: ObjectId;
+  weekId: string;
+  batchNumber: number;
+  recipients: Array<{ address: string; amount: string }>;
+  recipientCount: number;
+  totalAmount: string;
+  status: 'pending' | 'queued' | 'processing' | 'completed' | 'failed';
+  execution?: {
+    txHash: string;
+    gasUsed: string;
+    gasPrice: string;
+    blockNumber: number;
+    confirmedAt: Date;
+  };
+  retryCount: number;
+  maxRetries: number;
+  lastError?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt?: Date;
+}
+
+interface Distribution {
+  _id?: ObjectId;
+  weekId: string;
+  status: string;
+  stats?: {
+    eligibleHolders?: number;
+    totalDistributed?: string;
+  };
+  config?: {
+    rewardToken?: string;
+  };
+}
+
+interface Recipient {
+  _id?: ObjectId;
+  distributionId: ObjectId;
+  weekId: string;
+  address: string;
+  reward: string;
+  status: string;
+  batchId?: ObjectId;
+  txHash?: string;
+}
+
 async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
+  const db = ctx.db;
+  const config = getConfig();
+  const isSimulated = config.MOCK_TRANSACTIONS;
+
   await ctx.log(`Processing airdrop for week ${weekId}`);
-  await ctx.setProgress(0, 1, 'Not implemented yet');
-  await ctx.warn(`Airdrop execution not implemented - transactions would be sent here`);
-  await ctx.setProgress(1, 1, 'Completed');
+  await ctx.log(`Mode: ${isSimulated ? 'SIMULATED' : 'PRODUCTION'}`);
+
+  // Load distribution
+  const distribution = await db.collection<Distribution>('distributions').findOne({ weekId });
+  if (!distribution) {
+    throw new Error(`Distribution not found for week ${weekId}`);
+  }
+
+  // Load pending batches
+  const batches = await db.collection<Batch>('batches')
+    .find({ distributionId: distribution._id, status: { $in: ['pending', 'queued', 'failed'] } })
+    .sort({ batchNumber: 1 })
+    .toArray();
+
+  if (batches.length === 0) {
+    await ctx.warn('No pending batches to process');
+    await ctx.setResult({ processed: 0, message: 'No batches to process' });
+    return;
+  }
+
+  await ctx.log(`Found ${batches.length} batches to process`);
+  await ctx.setProgress(0, batches.length, 'Processing batches...');
+
+  let processedBatches = 0;
+  let successfulBatches = 0;
+  let failedBatches = 0;
+  let totalSent = 0n;
+
+  for (const batch of batches) {
+    try {
+      await ctx.log(`Processing batch ${batch.batchNumber} (${batch.recipientCount} recipients)`);
+
+      // Update batch status to processing
+      await db.collection<Batch>('batches').updateOne(
+        { _id: batch._id },
+        { $set: { status: 'processing', updatedAt: new Date() } }
+      );
+
+      if (isSimulated) {
+        // Simulated mode - generate fake transaction data
+        await sleep(500); // Simulate network delay
+
+        const fakeTxHash = `0x${'sim'.repeat(4)}${Date.now().toString(16)}${'0'.repeat(32)}`.slice(0, 66);
+        const fakeGasUsed = (21000 + batch.recipientCount * 10000).toString();
+
+        // Update batch as completed
+        await db.collection<Batch>('batches').updateOne(
+          { _id: batch._id },
+          {
+            $set: {
+              status: 'completed',
+              execution: {
+                txHash: fakeTxHash,
+                gasUsed: fakeGasUsed,
+                gasPrice: '1000000000', // 1 gwei
+                blockNumber: Math.floor(Date.now() / 1000),
+                confirmedAt: new Date(),
+              },
+              updatedAt: new Date(),
+              completedAt: new Date(),
+            },
+          }
+        );
+
+        // Update recipients with fake txHash (by address from batch)
+        const recipientAddresses = (batch.recipients || []).map(r => r.address);
+        if (recipientAddresses.length > 0) {
+          await db.collection<Recipient>('recipients').updateMany(
+            { distributionId: distribution._id, address: { $in: recipientAddresses } },
+            {
+              $set: {
+                status: 'completed',
+                txHash: fakeTxHash,
+                updatedAt: new Date(),
+                completedAt: new Date(),
+              },
+            }
+          );
+        }
+
+        // Calculate total sent
+        const batchTotal = BigInt(batch.totalAmount);
+        totalSent += batchTotal;
+
+        await ctx.log(`[SIMULATED] Batch ${batch.batchNumber} completed`, {
+          txHash: fakeTxHash.slice(0, 18) + '...',
+          recipients: batch.recipientCount,
+        });
+
+        successfulBatches++;
+
+      } else {
+        // Production mode - execute real transactions
+        // This would integrate with ethers.js and the Disperse contract
+        await ctx.warn(`Production mode not yet implemented - batch ${batch.batchNumber} skipped`);
+
+        // For now, mark as failed in production mode
+        await db.collection<Batch>('batches').updateOne(
+          { _id: batch._id },
+          {
+            $set: {
+              status: 'failed',
+              lastError: 'Production transaction execution not implemented',
+              updatedAt: new Date(),
+            },
+            $inc: { retryCount: 1 },
+          }
+        );
+
+        failedBatches++;
+      }
+
+      processedBatches++;
+      await ctx.setProgress(processedBatches, batches.length, `Batch ${batch.batchNumber}/${batches.length}`);
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await ctx.error(`Batch ${batch.batchNumber} failed: ${message}`);
+
+      await db.collection<Batch>('batches').updateOne(
+        { _id: batch._id },
+        {
+          $set: {
+            status: 'failed',
+            lastError: message,
+            updatedAt: new Date(),
+          },
+          $inc: { retryCount: 1 },
+        }
+      );
+
+      failedBatches++;
+      processedBatches++;
+    }
+  }
+
+  // Update distribution status
+  const allBatches = await db.collection<Batch>('batches')
+    .find({ distributionId: distribution._id })
+    .toArray();
+
+  const allCompleted = allBatches.every(b => b.status === 'completed');
+  const anyFailed = allBatches.some(b => b.status === 'failed');
+
+  const newStatus = allCompleted ? 'completed' : (anyFailed ? 'failed' : 'processing');
+
+  await db.collection<Distribution>('distributions').updateOne(
+    { _id: distribution._id },
+    {
+      $set: {
+        status: newStatus,
+        'stats.totalDistributed': totalSent.toString(),
+        updatedAt: new Date(),
+        ...(allCompleted ? { completedAt: new Date() } : {}),
+      },
+    }
+  );
+
+  // Summary
+  const totalSentFormatted = (totalSent / BigInt(10 ** 18)).toString();
+  await ctx.success(`Airdrop ${isSimulated ? 'simulation' : 'execution'} completed`);
+  await ctx.log(`Results: ${successfulBatches} successful, ${failedBatches} failed`);
+  await ctx.log(`Total sent: ${totalSentFormatted} ${distribution.config?.rewardToken || 'ETH'}`);
+
+  await ctx.setResult({
+    mode: isSimulated ? 'SIMULATED' : 'PRODUCTION',
+    processedBatches,
+    successfulBatches,
+    failedBatches,
+    totalSent: totalSent.toString(),
+    totalSentFormatted,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════

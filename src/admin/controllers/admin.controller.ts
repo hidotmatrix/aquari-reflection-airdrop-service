@@ -67,6 +67,8 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
     totalDistributions,
     pendingBatches,
     recentDistributions,
+    availableWeeks,
+    readyDistributions,
   ] = await Promise.all([
     db.collection<Distribution>('distributions').findOne({}, { sort: { createdAt: -1 } }),
     db.collection('snapshots').countDocuments(),
@@ -80,7 +82,24 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
       .sort({ createdAt: -1 })
       .limit(5)
       .toArray(),
+    // Get unique weeks from snapshots for week selector
+    db.collection<Snapshot>('snapshots').distinct('weekId'),
+    // Get distributions ready for approval
+    db.collection<Distribution>('distributions')
+      .find({ status: 'ready' })
+      .sort({ createdAt: -1 })
+      .toArray(),
   ]);
+
+  // Parse available weeks (remove -start/-end suffix and get unique base weeks)
+  const uniqueWeeks = [...new Set(
+    availableWeeks
+      .map((w: string) => w.replace(/-start$/, '').replace(/-end$/, ''))
+      .filter((w: string) => /^\d{4}-W\d{2}$/.test(w))
+  )].sort().reverse();
+
+  // Format MIN_BALANCE for display (convert from wei to tokens)
+  const minBalanceTokens = BigInt(config.MIN_BALANCE) / BigInt(10 ** 18);
 
   res.render('dashboard', {
     latestDistribution,
@@ -88,7 +107,15 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
     totalDistributions,
     pendingBatches,
     recentDistributions,
+    readyDistributions,
+    availableWeeks: uniqueWeeks,
     mockMode: config.MOCK_MODE,
+    mockSnapshots: config.MOCK_SNAPSHOTS,
+    mockTransactions: config.MOCK_TRANSACTIONS,
+    minBalance: minBalanceTokens.toString(),
+    rewardPool: (BigInt(config.REWARD_POOL) / BigInt(10 ** 18)).toString(),
+    rewardToken: config.REWARD_TOKEN,
+    aquariAddress: config.AQUARI_ADDRESS,
   });
 }
 
@@ -248,6 +275,7 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
     recipients,
     currentStep,
     aquariAddress: config.AQUARI_ADDRESS,
+    mockTransactions: config.MOCK_TRANSACTIONS,
     pagination: buildPaginationMeta(totalRecipients, { page, limit, skip }),
   });
 }
@@ -529,9 +557,11 @@ export async function triggerCalculation(req: Request, res: Response): Promise<v
 
 export async function triggerFullFlow(req: Request, res: Response): Promise<void> {
   const db: Db = req.app.locals.db;
+  const { weekId: requestedWeekId } = req.body;
 
   try {
-    const weekId = getCurrentWeekId();
+    // Use requested week or current week
+    const weekId = requestedWeekId || getCurrentWeekId();
 
     // Start full flow job
     const job = await startJob(db, 'full-flow', weekId);
@@ -539,6 +569,187 @@ export async function triggerFullFlow(req: Request, res: Response): Promise<void
     res.json({
       success: true,
       message: `Full flow job started for ${weekId}`,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+export async function triggerAirdrop(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const { weekId, distributionId } = req.body;
+
+  if (!weekId && !distributionId) {
+    res.status(400).json({ success: false, error: 'weekId or distributionId required' });
+    return;
+  }
+
+  try {
+    // Find the distribution
+    let distribution: Distribution | null = null;
+
+    if (distributionId) {
+      distribution = await db.collection<Distribution>('distributions').findOne({
+        _id: new ObjectId(distributionId),
+      });
+    } else if (weekId) {
+      distribution = await db.collection<Distribution>('distributions').findOne({ weekId });
+    }
+
+    if (!distribution) {
+      res.status(404).json({ success: false, error: 'Distribution not found' });
+      return;
+    }
+
+    if (distribution.status !== 'ready') {
+      res.status(400).json({
+        success: false,
+        error: `Distribution is not ready for airdrop (status: ${distribution.status})`,
+      });
+      return;
+    }
+
+    // Start airdrop job
+    const job = await startJob(db, 'airdrop', distribution.weekId);
+
+    res.json({
+      success: true,
+      message: `Airdrop job started for ${distribution.weekId}`,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+export async function approveAndExecuteAirdrop(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const config = getConfig();
+  const { distributionId, rewardPool, rewardToken } = req.body;
+
+  if (!distributionId) {
+    res.status(400).json({ success: false, error: 'distributionId required' });
+    return;
+  }
+
+  try {
+    const distribution = await db.collection<Distribution>('distributions').findOne({
+      _id: new ObjectId(distributionId),
+    });
+
+    if (!distribution) {
+      res.status(404).json({ success: false, error: 'Distribution not found' });
+      return;
+    }
+
+    if (distribution.status !== 'ready') {
+      res.status(400).json({
+        success: false,
+        error: `Distribution must be in "ready" status to approve (current: ${distribution.status})`,
+      });
+      return;
+    }
+
+    // Build update with new reward config if provided
+    const updateConfig: Record<string, unknown> = {
+      status: 'processing',
+      updatedAt: new Date(),
+    };
+
+    if (rewardPool) {
+      updateConfig['config.rewardPool'] = rewardPool;
+    }
+    if (rewardToken) {
+      updateConfig['config.rewardToken'] = rewardToken;
+    }
+
+    // Update status to processing and optionally update reward config
+    await db.collection<Distribution>('distributions').updateOne(
+      { _id: distribution._id },
+      { $set: updateConfig }
+    );
+
+    // If reward pool changed, we need to recalculate rewards for recipients
+    if (rewardPool && rewardPool !== distribution.config?.rewardPool) {
+      const newRewardPoolBigInt = BigInt(rewardPool);
+      const totalEligibleBalance = BigInt(distribution.stats?.totalEligibleBalance || '1');
+
+      // Update all recipients with new reward amounts
+      const recipients = await db.collection<Recipient>('recipients')
+        .find({ distributionId: distribution._id })
+        .toArray();
+
+      for (const recipient of recipients) {
+        const minBalance = BigInt(recipient.balances?.min || '0');
+        const newReward = (minBalance * newRewardPoolBigInt) / totalEligibleBalance;
+        const newRewardFormatted = `${(Number(newReward) / 1e18).toFixed(8)} ${rewardToken || distribution.config?.rewardToken || 'ETH'}`;
+
+        await db.collection<Recipient>('recipients').updateOne(
+          { _id: recipient._id },
+          {
+            $set: {
+              reward: newReward.toString(),
+              rewardFormatted: newRewardFormatted,
+              updatedAt: new Date(),
+            },
+          }
+        );
+      }
+
+      // Update batch totals
+      const batches = await db.collection<Batch>('batches')
+        .find({ distributionId: distribution._id })
+        .toArray();
+
+      for (const batch of batches) {
+        let batchTotal = 0n;
+        const updatedRecipients: Array<{ address: string; amount: string }> = [];
+
+        for (const batchRecipient of batch.recipients || []) {
+          const fullRecipient = await db.collection<Recipient>('recipients').findOne({
+            distributionId: distribution._id,
+            address: batchRecipient.address,
+          });
+          const amount = fullRecipient?.reward || '0';
+          batchTotal += BigInt(amount);
+          updatedRecipients.push({ address: batchRecipient.address, amount });
+        }
+
+        await db.collection<Batch>('batches').updateOne(
+          { _id: batch._id },
+          {
+            $set: {
+              recipients: updatedRecipients,
+              totalAmount: batchTotal.toString(),
+              updatedAt: new Date(),
+            },
+          }
+        );
+      }
+    }
+
+    // Start airdrop job
+    const job = await startJob(db, 'airdrop', distribution.weekId);
+
+    res.json({
+      success: true,
+      message: `Airdrop approved and started for ${distribution.weekId}`,
+      mode: config.MOCK_TRANSACTIONS ? 'SIMULATED' : 'PRODUCTION',
+      rewardPool: rewardPool || distribution.config?.rewardPool,
+      rewardToken: rewardToken || distribution.config?.rewardToken,
       job: {
         id: job._id,
         type: job.type,

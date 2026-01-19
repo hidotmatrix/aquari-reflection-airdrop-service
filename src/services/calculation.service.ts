@@ -174,7 +174,7 @@ export async function calculateRewards(
             min: holder.minBalance,
           },
           reward: reward.toString(),
-          rewardFormatted: formatTokenAmount(reward.toString(), 18, 6),
+          rewardFormatted: `${formatTokenAmount(reward.toString(), 18, 8)} ${config.REWARD_TOKEN}`,
           percentage,
         });
 

@@ -9,6 +9,8 @@ export type SnapshotStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 export interface SnapshotMetadata {
   fetchDurationMs: number;
   apiCallCount: number;
+  referencedFrom?: string;  // If this snapshot references another week's data
+  duplicatedFrom?: string;  // If this snapshot was duplicated for dev testing
 }
 
 export interface SnapshotProgress {

@@ -16,11 +16,12 @@ import { calculateRewards } from './calculation.service';
 // Job Runner - Executes jobs with progress tracking
 // ═══════════════════════════════════════════════════════════
 
-// Track running jobs to prevent duplicates
+// Track running jobs to prevent duplicates (in-memory)
 const runningJobs = new Set<string>();
 
 /**
  * Start a job (non-blocking - runs in background)
+ * Prevents duplicate jobs from running simultaneously
  */
 export async function startJob(
   db: Db,
@@ -29,25 +30,45 @@ export async function startJob(
 ): Promise<Job> {
   const jobKey = `${type}-${weekId}`;
 
-  // Check if already running
+  // Check if already running in memory
   if (runningJobs.has(jobKey)) {
     const existing = await db.collection<Job>('jobs').findOne({
       type,
       weekId,
       status: 'running',
     });
-    if (existing) return existing;
+    if (existing) {
+      logger.info(`Job already running: ${jobKey}`);
+      return existing;
+    }
+  }
+
+  // Double-check database for running jobs (in case of server restart)
+  const existingRunning = await db.collection<Job>('jobs').findOne({
+    type,
+    weekId,
+    status: { $in: ['pending', 'running'] },
+  });
+
+  if (existingRunning) {
+    logger.info(`Found existing job in DB: ${jobKey} (status: ${existingRunning.status})`);
+    // If it's running, track it
+    if (existingRunning.status === 'running') {
+      runningJobs.add(jobKey);
+    }
+    return existingRunning;
   }
 
   // Create the job
   const job = await createNewJob(db, type, weekId);
 
-  // If job was already created and is running, return it
+  // If job was already created and is running (race condition check), return it
   if (job.status === 'running') {
+    runningJobs.add(jobKey);
     return job;
   }
 
-  // Mark as running
+  // Mark as running in memory
   runningJobs.add(jobKey);
 
   // Run the job in the background (don't await)
@@ -372,25 +393,164 @@ async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
 // ═══════════════════════════════════════════════════════════
 
 async function runFullFlowJob(ctx: JobContext, weekId: string): Promise<void> {
+  const db = ctx.db;
+  const config = getConfig();
+
   await ctx.log(`Running full flow for week ${weekId}`);
 
-  // Step 1: Start snapshot
-  await ctx.log(`Step 1/3: Taking start snapshot`);
-  await ctx.setProgress(0, 3, 'Start snapshot...');
-  await runSnapshotJob(ctx, `${weekId}-start`);
+  // Check for previous week's snapshot to use as "start"
+  const previousWeekId = getPreviousWeekId(weekId);
+  const previousSnapshot = await db.collection<Snapshot>('snapshots').findOne({
+    weekId: { $regex: `^${previousWeekId}` },
+    status: 'completed',
+  });
 
-  // Step 2: End snapshot
-  await ctx.log(`Step 2/3: Taking end snapshot`);
-  await ctx.setProgress(1, 3, 'End snapshot...');
-  await runSnapshotJob(ctx, `${weekId}-end`);
+  // Dev mode: Take one snapshot and duplicate for both start/end
+  // Production mode: Use previous week as start, current week as end
+  const isDevMode = config.NODE_ENV === 'development';
 
-  // Step 3: Calculate
-  await ctx.log(`Step 3/3: Calculating rewards`);
-  await ctx.setProgress(2, 3, 'Calculating...');
-  await runCalculationJob(ctx, weekId);
+  if (previousSnapshot && !isDevMode) {
+    // Production: Use previous week's snapshot as start
+    await ctx.log(`Found previous snapshot (${previousWeekId}) - using as start reference`);
+    await ctx.log(`Step 1/2: Taking current week snapshot`);
+    await ctx.setProgress(0, 2, 'Current snapshot...');
+    await runSnapshotJob(ctx, `${weekId}-end`);
 
-  await ctx.setProgress(3, 3, 'Completed');
-  await ctx.success(`Full flow completed for week ${weekId}`);
+    // Copy reference for start
+    const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({
+      weekId: `${weekId}-end`,
+      status: 'completed'
+    });
+
+    if (endSnapshot) {
+      // Create start snapshot reference pointing to previous week's data
+      await db.collection<Snapshot>('snapshots').updateOne(
+        { weekId: `${weekId}-start` },
+        {
+          $setOnInsert: {
+            weekId: `${weekId}-start`,
+            timestamp: previousSnapshot.timestamp,
+            totalHolders: previousSnapshot.totalHolders,
+            totalBalance: previousSnapshot.totalBalance,
+            metadata: {
+              fetchDurationMs: previousSnapshot.metadata?.fetchDurationMs ?? 0,
+              apiCallCount: previousSnapshot.metadata?.apiCallCount ?? 0,
+              referencedFrom: previousSnapshot.weekId,
+            },
+            status: 'completed' as const,
+            createdAt: new Date(),
+            completedAt: new Date(),
+          },
+        },
+        { upsert: true }
+      );
+
+      // Copy holders from previous snapshot with new weekId
+      await ctx.log(`Referencing ${previousSnapshot.totalHolders} holders from previous week`);
+      const prevHolders = await db.collection<Holder>('holders')
+        .find({ snapshotId: previousSnapshot._id })
+        .toArray();
+
+      const startSnapshotDoc = await db.collection<Snapshot>('snapshots').findOne({ weekId: `${weekId}-start` });
+
+      if (startSnapshotDoc && prevHolders.length > 0) {
+        const newHolders = prevHolders.map(h => ({
+          ...h,
+          _id: undefined,
+          weekId: `${weekId}-start`,
+          snapshotId: startSnapshotDoc._id!,
+          createdAt: new Date(),
+        }));
+        await db.collection<Holder>('holders').insertMany(newHolders as Holder[]);
+      }
+    }
+
+    await ctx.log(`Step 2/2: Calculating rewards`);
+    await ctx.setProgress(1, 2, 'Calculating...');
+    await runCalculationJob(ctx, weekId);
+
+    await ctx.setProgress(2, 2, 'Completed');
+    await ctx.success(`Full flow completed for week ${weekId} (1 API snapshot + previous week reference)`);
+
+  } else {
+    // Dev mode OR first week: Take one snapshot and duplicate
+    await ctx.log(`Dev mode: Taking single snapshot and duplicating for calculation`);
+
+    await ctx.log(`Step 1/2: Taking snapshot`);
+    await ctx.setProgress(0, 2, 'Taking snapshot...');
+    await runSnapshotJob(ctx, `${weekId}-end`);
+
+    // Duplicate as start snapshot
+    await ctx.log(`Step 2/2: Duplicating snapshot for calculation testing`);
+    await ctx.setProgress(1, 2, 'Duplicating...');
+
+    const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({
+      weekId: `${weekId}-end`,
+      status: 'completed'
+    });
+
+    if (endSnapshot) {
+      // Create start snapshot as copy
+      const startSnapshotId = new ObjectId();
+      await db.collection<Snapshot>('snapshots').insertOne({
+        _id: startSnapshotId,
+        weekId: `${weekId}-start`,
+        timestamp: endSnapshot.timestamp,
+        totalHolders: endSnapshot.totalHolders,
+        totalBalance: endSnapshot.totalBalance,
+        metadata: {
+          fetchDurationMs: endSnapshot.metadata?.fetchDurationMs ?? 0,
+          apiCallCount: endSnapshot.metadata?.apiCallCount ?? 0,
+          duplicatedFrom: `${weekId}-end`,
+        },
+        status: 'completed',
+        createdAt: new Date(),
+        completedAt: new Date(),
+      });
+
+      // Copy holders with new weekId and snapshotId
+      const holders = await db.collection<Holder>('holders')
+        .find({ snapshotId: endSnapshot._id })
+        .toArray();
+
+      if (holders.length > 0) {
+        const duplicatedHolders = holders.map(h => ({
+          ...h,
+          _id: undefined,
+          weekId: `${weekId}-start`,
+          snapshotId: startSnapshotId,
+          createdAt: new Date(),
+        }));
+        await db.collection<Holder>('holders').insertMany(duplicatedHolders as Holder[]);
+        await ctx.log(`Duplicated ${holders.length} holders for start snapshot`);
+      }
+    }
+
+    // Calculate
+    await ctx.log(`Calculating rewards`);
+    await runCalculationJob(ctx, weekId);
+
+    await ctx.setProgress(2, 2, 'Completed');
+    await ctx.success(`Full flow completed for week ${weekId} (dev mode - single snapshot duplicated)`);
+  }
+}
+
+/**
+ * Get previous week ID (e.g., 2026-W04 -> 2026-W03)
+ */
+function getPreviousWeekId(weekId: string): string {
+  const match = weekId.match(/^(\d{4})-W(\d{2})$/);
+  if (!match || !match[1] || !match[2]) return weekId;
+
+  const year = parseInt(match[1], 10);
+  const week = parseInt(match[2], 10);
+
+  if (week === 1) {
+    // Go to previous year's last week (52 or 53)
+    return `${year - 1}-W52`;
+  }
+
+  return `${year}-W${(week - 1).toString().padStart(2, '0')}`;
 }
 
 // ═══════════════════════════════════════════════════════════

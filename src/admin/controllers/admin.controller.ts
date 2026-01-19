@@ -182,6 +182,7 @@ export async function listDistributions(req: Request, res: Response): Promise<vo
 
 export async function distributionDetail(req: Request, res: Response): Promise<void> {
   const db: Db = req.app.locals.db;
+  const config = getConfig();
   const { id } = req.params;
   const { page, limit, skip } = getPagination(req, LIMITS.RECIPIENTS);
 
@@ -202,7 +203,17 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
     return;
   }
 
-  const [batchStats, recipients, totalRecipients] = await Promise.all([
+  // Fetch snapshots for stats
+  const [startSnapshot, endSnapshot] = await Promise.all([
+    distribution.startSnapshotId
+      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.startSnapshotId })
+      : null,
+    distribution.endSnapshotId
+      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.endSnapshotId })
+      : null,
+  ]);
+
+  const [batchStats, recipients, totalRecipients, batches] = await Promise.all([
     db
       .collection('batches')
       .aggregate([
@@ -218,12 +229,25 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
       .limit(limit)
       .toArray(),
     db.collection('recipients').countDocuments({ distributionId: distribution._id }),
+    db.collection('batches').find({ distributionId: distribution._id }).sort({ batchNumber: 1 }).toArray(),
   ]);
+
+  // Calculate flow step
+  let currentStep = 1;
+  if (startSnapshot?.status === 'completed') currentStep = 2;
+  if (endSnapshot?.status === 'completed') currentStep = 3;
+  if (distribution.status === 'ready' || distribution.status === 'processing') currentStep = 4;
+  if (distribution.status === 'completed') currentStep = 5;
 
   res.render('distribution-detail', {
     distribution,
+    startSnapshot,
+    endSnapshot,
     batchStats,
+    batches,
     recipients,
+    currentStep,
+    aquariAddress: config.AQUARI_ADDRESS,
     pagination: buildPaginationMeta(totalRecipients, { page, limit, skip }),
   });
 }
@@ -330,6 +354,7 @@ export async function batchDetail(req: Request, res: Response): Promise<void> {
 
 export async function searchByAddress(req: Request, res: Response): Promise<void> {
   const db: Db = req.app.locals.db;
+  const config = getConfig();
   const address = ((req.query.address as string) ?? '').toLowerCase().trim();
   const tab = (req.query.tab as string) ?? 'airdrops';
   const { page, limit, skip } = getPagination(req, LIMITS.SEARCH_HISTORY);
@@ -341,6 +366,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
       pagination: null,
       tab,
       error: null,
+      aquariAddress: config.AQUARI_ADDRESS,
     });
     return;
   }
@@ -352,6 +378,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
       pagination: null,
       tab,
       error: 'Invalid address format',
+      aquariAddress: config.AQUARI_ADDRESS,
     });
     return;
   }
@@ -367,7 +394,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
         .sort({ weekId: -1 })
         .skip(skip)
         .limit(limit)
-        .project({ weekId: 1, balance: 1, balanceFormatted: 1, createdAt: 1 })
+        .project({ weekId: 1, balance: 1, balanceFormatted: 1, snapshotAt: 1, createdAt: 1 })
         .toArray(),
       db.collection('holders').countDocuments({ address }),
     ]);
@@ -390,6 +417,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
     tab,
     pagination: buildPaginationMeta(total, { page, limit, skip }),
     error: null,
+    aquariAddress: config.AQUARI_ADDRESS,
   });
 }
 

@@ -2,93 +2,335 @@
   <a href="/admin/distributions" class="text-cyan-400 hover:text-cyan-300 text-sm">&larr; Back to Distributions</a>
 </div>
 
+<!-- Header with Week ID -->
 <div class="bg-dark-700 border border-dark-500 rounded-xl p-5 mb-6">
-  <h1 class="text-xl font-semibold text-white mb-4">Distribution: <span class="font-mono text-cyan-400"><%= distribution.weekId %></span></h1>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+  <div class="flex justify-between items-start mb-6">
     <div>
-      <span class="text-gray-500">Status</span>
-      <p class="mt-1">
-        <span class="px-2 py-0.5 text-xs rounded-full
-          <%= distribution.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
-             distribution.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-             distribution.status === 'ready' ? 'bg-cyan-500/20 text-cyan-400' :
-             'bg-yellow-500/20 text-yellow-400' %>">
-          <%= distribution.status %>
-        </span>
-      </p>
+      <h1 class="text-xl font-semibold text-white mb-1">Distribution: <span class="font-mono text-cyan-400"><%= distribution.weekId %></span></h1>
+      <p class="text-gray-500 text-sm">Created <%= new Date(distribution.createdAt).toLocaleString() %></p>
     </div>
-    <div>
-      <span class="text-gray-500">Eligible Holders</span>
-      <p class="text-white font-medium mt-1"><%= distribution.stats?.eligibleHolders?.toLocaleString() || 0 %></p>
-    </div>
-    <div>
-      <span class="text-gray-500">Reward Token</span>
-      <p class="text-gray-300 mt-1"><%= distribution.config?.rewardToken || '—' %></p>
-    </div>
-    <div>
-      <span class="text-gray-500">Created</span>
-      <p class="text-gray-300 mt-1"><%= new Date(distribution.createdAt).toLocaleDateString() %></p>
-    </div>
-  </div>
-  <% if (batchStats && batchStats.length > 0) { %>
-  <div class="flex flex-wrap gap-2">
-    <% batchStats.forEach(s => { %>
-    <span class="px-2 py-1 text-xs rounded-full
-      <%= s._id === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
-         s._id === 'failed' ? 'bg-red-500/20 text-red-400' :
-         s._id === 'processing' ? 'bg-cyan-500/20 text-cyan-400' :
+    <span class="px-3 py-1 text-sm rounded-full
+      <%= distribution.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+         distribution.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+         distribution.status === 'ready' ? 'bg-cyan-500/20 text-cyan-400' :
+         distribution.status === 'processing' ? 'bg-purple-500/20 text-purple-400' :
          'bg-yellow-500/20 text-yellow-400' %>">
-      <%= s._id %>: <%= s.count %>
+      <%= distribution.status %>
     </span>
-    <% }) %>
   </div>
-  <% } %>
-</div>
 
-<div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
-  <div class="px-5 py-4 border-b border-dark-500">
-    <h2 class="text-base font-medium text-white">Recipients (Top by Reward)</h2>
-  </div>
-  <table class="w-full">
-    <thead>
-      <tr class="bg-dark-800/50">
-        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">MIN Balance</th>
-        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
-        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-dark-600">
-      <% recipients.forEach(r => { %>
-      <tr class="hover:bg-dark-600/30 transition-colors">
-        <td class="px-5 py-3 font-mono text-sm text-cyan-400"><%= r.address.slice(0,10) %>...<%= r.address.slice(-8) %></td>
-        <td class="px-5 py-3 text-sm text-gray-300"><%= r.balances?.min ? (BigInt(r.balances.min) / BigInt(10**18)).toString() : '—' %></td>
-        <td class="px-5 py-3 text-sm text-emerald-400 font-medium"><%= r.rewardFormatted %></td>
-        <td class="px-5 py-3">
-          <span class="px-2 py-0.5 text-xs rounded-full
-            <%= r.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
-               r.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-               'bg-yellow-500/20 text-yellow-400' %>">
-            <%= r.status %>
-          </span>
-        </td>
-        <td class="px-5 py-3 font-mono text-xs text-gray-500"><%= r.txHash ? r.txHash.slice(0,10) + '...' : '—' %></td>
-      </tr>
+  <!-- Flow Steps -->
+  <div class="mb-6">
+    <h3 class="text-sm font-medium text-gray-400 mb-3">Distribution Flow</h3>
+    <div class="flex items-center gap-2">
+      <% const steps = [
+        { num: 1, label: 'Start Snapshot', done: currentStep > 1 },
+        { num: 2, label: 'End Snapshot', done: currentStep > 2 },
+        { num: 3, label: 'Calculate', done: currentStep > 3 },
+        { num: 4, label: 'Simulate/Execute', done: currentStep > 4 },
+        { num: 5, label: 'Completed', done: currentStep === 5 }
+      ]; %>
+      <% steps.forEach((step, idx) => { %>
+        <div class="flex items-center">
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg <%= step.done ? 'bg-emerald-500/20' : (currentStep === step.num ? 'bg-cyan-500/20' : 'bg-dark-600') %>">
+            <div class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium
+              <%= step.done ? 'bg-emerald-500 text-white' : (currentStep === step.num ? 'bg-cyan-500 text-white' : 'bg-dark-500 text-gray-400') %>">
+              <% if (step.done) { %>✓<% } else { %><%= step.num %><% } %>
+            </div>
+            <span class="text-xs <%= step.done ? 'text-emerald-400' : (currentStep === step.num ? 'text-cyan-400' : 'text-gray-500') %>"><%= step.label %></span>
+          </div>
+          <% if (idx < steps.length - 1) { %>
+            <div class="w-4 h-0.5 <%= step.done ? 'bg-emerald-500/50' : 'bg-dark-500' %>"></div>
+          <% } %>
+        </div>
       <% }) %>
-      <% if (recipients.length === 0) { %>
-      <tr>
-        <td colspan="5" class="px-5 py-8 text-center text-gray-500 text-sm">No recipients found</td>
-      </tr>
+    </div>
+  </div>
+
+  <!-- Snapshot Stats Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Start Snapshot -->
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-2 h-2 rounded-full <%= startSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">Start Snapshot</h4>
+      </div>
+      <% if (startSnapshot) { %>
+        <div class="space-y-2">
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Holders</span>
+            <span class="text-sm font-mono text-white"><%= startSnapshot.totalHolders?.toLocaleString() || 0 %></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Total Balance</span>
+            <span class="text-xs font-mono text-gray-400"><%= startSnapshot.totalBalance ? (BigInt(startSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Status</span>
+            <span class="text-xs <%= startSnapshot.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400' %>"><%= startSnapshot.status %></span>
+          </div>
+        </div>
+      <% } else { %>
+        <p class="text-gray-500 text-sm">Not taken yet</p>
       <% } %>
-    </tbody>
-  </table>
+    </div>
+
+    <!-- End Snapshot -->
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-2 h-2 rounded-full <%= endSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">End Snapshot</h4>
+      </div>
+      <% if (endSnapshot) { %>
+        <div class="space-y-2">
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Holders</span>
+            <span class="text-sm font-mono text-white"><%= endSnapshot.totalHolders?.toLocaleString() || 0 %></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Total Balance</span>
+            <span class="text-xs font-mono text-gray-400"><%= endSnapshot.totalBalance ? (BigInt(endSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Status</span>
+            <span class="text-xs <%= endSnapshot.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400' %>"><%= endSnapshot.status %></span>
+          </div>
+        </div>
+      <% } else { %>
+        <p class="text-gray-500 text-sm">Not taken yet</p>
+      <% } %>
+    </div>
+
+    <!-- Distribution Summary -->
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-2 h-2 rounded-full <%= distribution.stats?.eligibleHolders ? 'bg-emerald-400' : 'bg-gray-500' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">Distribution Summary</h4>
+      </div>
+      <div class="space-y-2">
+        <div class="flex justify-between">
+          <span class="text-xs text-gray-500">Eligible</span>
+          <span class="text-sm font-mono text-emerald-400"><%= distribution.stats?.eligibleHolders?.toLocaleString() || 0 %></span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-xs text-gray-500">Excluded</span>
+          <span class="text-sm font-mono text-red-400"><%= distribution.stats?.excludedHolders?.toLocaleString() || 0 %></span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-xs text-gray-500">Reward Pool</span>
+          <span class="text-xs font-mono text-cyan-400"><%= distribution.config?.rewardPool ? (BigInt(distribution.config.rewardPool) / BigInt(10**18)).toString() : '0' %> <%= distribution.config?.rewardToken || 'ETH' %></span>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- Simulate Airdrop Section -->
+<% if (distribution.status === 'ready' && recipients.length > 0) { %>
+<div class="bg-dark-700 border border-dark-500 rounded-xl p-5 mb-6">
+  <div class="flex justify-between items-center mb-4">
+    <div>
+      <h2 class="text-base font-medium text-white">Simulate Airdrop</h2>
+      <p class="text-gray-500 text-xs mt-1">Preview transactions before executing</p>
+    </div>
+    <button onclick="simulateAirdrop()" id="btnSimulate"
+      class="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
+      Simulate Transactions
+    </button>
+  </div>
+
+  <!-- Simulation Results (hidden by default) -->
+  <div id="simulationResults" class="hidden mt-4">
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <h4 class="text-sm font-medium text-gray-300 mb-3">Simulation Preview</h4>
+      <div id="simulationContent" class="space-y-2 max-h-64 overflow-y-auto font-mono text-xs">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<!-- Batch Stats -->
+<% if (batchStats && batchStats.length > 0) { %>
+<div class="bg-dark-700 border border-dark-500 rounded-xl p-5 mb-6">
+  <h2 class="text-base font-medium text-white mb-3">Batches</h2>
+  <div class="flex flex-wrap gap-3">
+    <% batchStats.forEach(s => { %>
+    <div class="bg-dark-800/50 rounded-lg px-4 py-2 border border-dark-600">
+      <span class="text-xs text-gray-500 block"><%= s._id %></span>
+      <span class="text-lg font-semibold <%= s._id === 'completed' ? 'text-emerald-400' :
+         s._id === 'failed' ? 'text-red-400' :
+         s._id === 'processing' ? 'text-cyan-400' :
+         'text-yellow-400' %>"><%= s.count %></span>
+    </div>
+    <% }) %>
+    <div class="bg-dark-800/50 rounded-lg px-4 py-2 border border-dark-600">
+      <span class="text-xs text-gray-500 block">Total Batches</span>
+      <span class="text-lg font-semibold text-white"><%= batches?.length || 0 %></span>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<!-- Recipients Table -->
+<div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
+  <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
+    <h2 class="text-base font-medium text-white">Recipients <span class="text-gray-500 text-sm font-normal">(Top by Reward)</span></h2>
+    <span class="text-xs text-gray-500"><%= pagination.total?.toLocaleString() || 0 %> total</span>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full">
+      <thead>
+        <tr class="bg-dark-800/50">
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">MIN Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-dark-600">
+        <% recipients.forEach(r => { %>
+        <tr class="hover:bg-dark-600/30 transition-colors">
+          <td class="px-5 py-3">
+            <a href="https://basescan.org/token/<%= aquariAddress %>?a=<%= r.address %>"
+               target="_blank"
+               class="font-mono text-sm text-cyan-400 hover:text-cyan-300 hover:underline"
+               title="View on Basescan with AQUARI holdings">
+              <%= r.address.slice(0,6) %>...<%= r.address.slice(-4) %>
+              <svg class="inline w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+            </a>
+          </td>
+          <td class="px-5 py-3 text-sm text-gray-400 font-mono">
+            <%= r.balances?.start ? (BigInt(r.balances.start) / BigInt(10**18)).toLocaleString() : '—' %>
+          </td>
+          <td class="px-5 py-3 text-sm text-gray-400 font-mono">
+            <%= r.balances?.end ? (BigInt(r.balances.end) / BigInt(10**18)).toLocaleString() : '—' %>
+          </td>
+          <td class="px-5 py-3 text-sm text-white font-mono font-medium">
+            <%= r.balances?.min ? (BigInt(r.balances.min) / BigInt(10**18)).toLocaleString() : '—' %>
+          </td>
+          <td class="px-5 py-3 text-sm text-emerald-400 font-mono font-medium"><%= r.rewardFormatted || '—' %></td>
+          <td class="px-5 py-3">
+            <span class="px-2 py-0.5 text-xs rounded-full
+              <%= r.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+                 r.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                 r.status === 'processing' ? 'bg-cyan-500/20 text-cyan-400' :
+                 'bg-yellow-500/20 text-yellow-400' %>">
+              <%= r.status %>
+            </span>
+          </td>
+          <td class="px-5 py-3">
+            <% if (r.txHash) { %>
+              <a href="https://basescan.org/tx/<%= r.txHash %>"
+                 target="_blank"
+                 class="font-mono text-xs text-gray-500 hover:text-cyan-400">
+                <%= r.txHash.slice(0,8) %>...
+              </a>
+            <% } else { %>
+              <span class="text-gray-600">—</span>
+            <% } %>
+          </td>
+        </tr>
+        <% }) %>
+        <% if (recipients.length === 0) { %>
+        <tr>
+          <td colspan="7" class="px-5 py-8 text-center text-gray-500 text-sm">No recipients found</td>
+        </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
 <% if (pagination.totalPages > 1) { %>
 <div class="mt-4 flex justify-center gap-2">
-  <% for (let i = 1; i <= pagination.totalPages; i++) { %>
-  <a href="?page=<%= i %>" class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>"><%= i %></a>
+  <% if (pagination.page > 1) { %>
+    <a href="?page=<%= pagination.page - 1 %>" class="px-3 py-1 text-sm rounded bg-dark-700 text-gray-400 hover:text-white">&larr;</a>
+  <% } %>
+  <%
+    let startPage = Math.max(1, pagination.page - 2);
+    let endPage = Math.min(pagination.totalPages, pagination.page + 2);
+  %>
+  <% for (let i = startPage; i <= endPage; i++) { %>
+    <a href="?page=<%= i %>" class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>"><%= i %></a>
+  <% } %>
+  <% if (pagination.page < pagination.totalPages) { %>
+    <a href="?page=<%= pagination.page + 1 %>" class="px-3 py-1 text-sm rounded bg-dark-700 text-gray-400 hover:text-white">&rarr;</a>
   <% } %>
 </div>
 <% } %>
+
+<script>
+  const distributionId = '<%= distribution._id %>';
+  const recipients = <%- JSON.stringify(recipients.map(r => ({
+    address: r.address,
+    reward: r.reward,
+    rewardFormatted: r.rewardFormatted,
+    status: r.status
+  }))) %>;
+
+  async function simulateAirdrop() {
+    const btn = document.getElementById('btnSimulate');
+    const resultsDiv = document.getElementById('simulationResults');
+    const contentDiv = document.getElementById('simulationContent');
+
+    btn.disabled = true;
+    btn.textContent = 'Simulating...';
+
+    try {
+      // Show simulation preview
+      resultsDiv.classList.remove('hidden');
+
+      let html = '<div class="text-purple-400 mb-2">--- SIMULATION PREVIEW ---</div>';
+      html += '<div class="text-gray-500 mb-2">The following transactions would be executed:</div>';
+
+      // Group by batch
+      const batchSize = <%= distribution.config?.batchSize || 100 %>;
+      const pendingRecipients = recipients.filter(r => r.status === 'pending');
+      const batches = [];
+
+      for (let i = 0; i < pendingRecipients.length; i += batchSize) {
+        batches.push(pendingRecipients.slice(i, i + batchSize));
+      }
+
+      let totalReward = BigInt(0);
+      batches.forEach((batch, idx) => {
+        html += `<div class="mt-3 p-2 bg-dark-700 rounded">`;
+        html += `<div class="text-cyan-400 mb-1">Batch ${idx + 1} (${batch.length} recipients)</div>`;
+        batch.slice(0, 3).forEach(r => {
+          html += `<div class="text-gray-400 pl-2">→ ${r.address.slice(0,10)}...${r.address.slice(-6)}: ${r.rewardFormatted}</div>`;
+          if (r.reward) totalReward += BigInt(r.reward);
+        });
+        if (batch.length > 3) {
+          html += `<div class="text-gray-500 pl-2">... and ${batch.length - 3} more</div>`;
+        }
+        html += `</div>`;
+      });
+
+      const totalFormatted = (totalReward / BigInt(10**18)).toString();
+      html += `<div class="mt-4 pt-3 border-t border-dark-600">`;
+      html += `<div class="flex justify-between"><span class="text-gray-400">Total Batches:</span><span class="text-white">${batches.length}</span></div>`;
+      html += `<div class="flex justify-between"><span class="text-gray-400">Total Recipients:</span><span class="text-white">${pendingRecipients.length}</span></div>`;
+      html += `<div class="flex justify-between"><span class="text-gray-400">Total Rewards:</span><span class="text-emerald-400">${totalFormatted} <%= distribution.config?.rewardToken || 'ETH' %></span></div>`;
+      html += `</div>`;
+
+      html += `<div class="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-400 text-xs">`;
+      html += `<strong>Note:</strong> This is a simulation. No transactions have been sent. `;
+      html += `Real execution would require wallet connection and gas fees.`;
+      html += `</div>`;
+
+      contentDiv.innerHTML = html;
+      btn.textContent = 'Simulation Complete';
+
+    } catch (e) {
+      contentDiv.innerHTML = `<div class="text-red-400">Error: ${e.message}</div>`;
+    }
+  }
+</script>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recipients - AQUARI Airdrop Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <%- include('partials/nav') %>
+  <main class="max-w-7xl mx-auto py-6 px-4">
+    <h1 class="text-2xl font-bold mb-6">Recipients</h1>
+    <form class="bg-white rounded-lg shadow p-4 mb-6 flex space-x-4">
+      <select name="weekId" class="border rounded px-3 py-2">
+        <option value="">All Weeks</option>
+        <% weeks.forEach(w => { %>
+        <option value="<%= w %>" <%= filters.weekId === w ? 'selected' : '' %>><%= w %></option>
+        <% }) %>
+      </select>
+      <select name="status" class="border rounded px-3 py-2">
+        <option value="">All Statuses</option>
+        <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>Pending</option>
+        <option value="completed" <%= filters.status === 'completed' ? 'selected' : '' %>>Completed</option>
+        <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+      </select>
+      <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">Filter</button>
+    </form>
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          <% recipients.forEach(r => { %>
+          <tr>
+            <td class="px-6 py-4 font-mono text-sm"><a href="/admin/search?address=<%= r.address %>" class="text-indigo-600 hover:underline"><%= r.address.slice(0,10) %>...<%= r.address.slice(-8) %></a></td>
+            <td class="px-6 py-4"><%= r.weekId %></td>
+            <td class="px-6 py-4 font-medium"><%= r.rewardFormatted %></td>
+            <td class="px-6 py-4"><span class="px-2 py-1 text-xs rounded <%= r.status === 'completed' ? 'bg-green-100 text-green-800' : r.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800' %>"><%= r.status %></span></td>
+            <td class="px-6 py-4 font-mono text-xs"><%= r.txHash ? r.txHash.slice(0,10) + '...' : '-' %></td>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <%- include('partials/pagination', { pagination }) %>
+  </main>
+</body>
+</html>

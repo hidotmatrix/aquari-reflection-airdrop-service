@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - AQUARI Airdrop Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <nav class="bg-white shadow-sm border-b">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16">
+        <div class="flex items-center space-x-8">
+          <a href="/admin/dashboard" class="text-xl font-bold text-indigo-600">AQUARI Airdrop</a>
+          <div class="hidden md:flex space-x-4">
+            <a href="/admin/dashboard" class="text-indigo-600 font-medium px-3 py-2">Dashboard</a>
+            <a href="/admin/snapshots" class="text-gray-700 hover:text-indigo-600 px-3 py-2">Snapshots</a>
+            <a href="/admin/distributions" class="text-gray-700 hover:text-indigo-600 px-3 py-2">Distributions</a>
+            <a href="/admin/recipients" class="text-gray-700 hover:text-indigo-600 px-3 py-2">Recipients</a>
+            <a href="/admin/batches" class="text-gray-700 hover:text-indigo-600 px-3 py-2">Batches</a>
+            <a href="/admin/search" class="text-gray-700 hover:text-indigo-600 px-3 py-2">Search</a>
+          </div>
+        </div>
+        <div class="flex items-center space-x-4">
+          <% if (mockMode) { %>
+          <span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-sm">MOCK MODE</span>
+          <% } %>
+          <a href="/admin/logout" class="text-red-600 hover:text-red-800">Logout</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+    <h1 class="text-2xl font-bold mb-6">Dashboard</h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-sm font-medium text-gray-500">Total Snapshots</h3>
+        <p class="text-3xl font-bold text-indigo-600"><%= totalSnapshots %></p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-sm font-medium text-gray-500">Total Distributions</h3>
+        <p class="text-3xl font-bold text-green-600"><%= totalDistributions %></p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-sm font-medium text-gray-500">Pending Batches</h3>
+        <p class="text-3xl font-bold text-yellow-600"><%= pendingBatches %></p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-sm font-medium text-gray-500">Latest Distribution</h3>
+        <p class="text-lg font-medium"><%= latestDistribution?.weekId || 'None' %></p>
+        <% if (latestDistribution) { %>
+        <span class="inline-block px-2 py-1 text-xs rounded <%=
+          latestDistribution.status === 'completed' ? 'bg-green-100 text-green-800' :
+          latestDistribution.status === 'failed' ? 'bg-red-100 text-red-800' :
+          'bg-yellow-100 text-yellow-800'
+        %>"><%= latestDistribution.status %></span>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- Test Triggers Panel -->
+    <div class="bg-white rounded-lg shadow mb-8">
+      <div class="px-6 py-4 border-b flex justify-between items-center">
+        <h2 class="text-lg font-medium">Manual Test Triggers</h2>
+        <span class="text-sm text-gray-500">Current Week: <span id="currentWeek" class="font-mono font-medium"></span></span>
+      </div>
+      <div class="p-6">
+        <p class="text-gray-600 text-sm mb-4">
+          Use these buttons to manually trigger the airdrop flow for testing. In production, these run automatically via cron jobs every Sunday.
+        </p>
+        <div class="flex flex-wrap gap-4">
+          <div class="flex items-center gap-2">
+            <button onclick="triggerSnapshot('start')" id="btnStartSnapshot"
+              class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+              1. Take Start Snapshot
+            </button>
+            <button onclick="triggerSnapshot('end')" id="btnEndSnapshot"
+              class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+              2. Take End Snapshot
+            </button>
+            <button onclick="triggerCalculation()" id="btnCalculate"
+              class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+              3. Calculate Rewards
+            </button>
+          </div>
+          <div class="border-l pl-4">
+            <button onclick="triggerFullFlow()" id="btnFullFlow"
+              class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+              Run Full Flow (All Steps)
+            </button>
+          </div>
+        </div>
+
+        <!-- Result Display -->
+        <div id="triggerResult" class="mt-4 hidden">
+          <div id="resultContent" class="p-4 rounded-lg text-sm font-mono whitespace-pre-wrap"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow">
+      <div class="px-6 py-4 border-b">
+        <h2 class="text-lg font-medium">Recent Distributions</h2>
+      </div>
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Eligible</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          <% recentDistributions.forEach(d => { %>
+          <tr>
+            <td class="px-6 py-4 whitespace-nowrap font-medium"><%= d.weekId %></td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="inline-block px-2 py-1 text-xs rounded <%=
+                d.status === 'completed' ? 'bg-green-100 text-green-800' :
+                d.status === 'failed' ? 'bg-red-100 text-red-800' :
+                d.status === 'ready' ? 'bg-purple-100 text-purple-800' :
+                'bg-yellow-100 text-yellow-800'
+              %>"><%= d.status %></span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap"><%= d.stats?.eligibleHolders || 0 %></td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <%= new Date(d.createdAt).toLocaleDateString() %>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <a href="/admin/distributions/<%= d._id %>" class="text-indigo-600 hover:text-indigo-900">View</a>
+            </td>
+          </tr>
+          <% }) %>
+          <% if (recentDistributions.length === 0) { %>
+          <tr>
+            <td colspan="5" class="px-6 py-4 text-center text-gray-500">No distributions yet</td>
+          </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    // Calculate current ISO week
+    function getCurrentWeekId() {
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      const days = Math.floor((now - startOfYear) / (24 * 60 * 60 * 1000));
+      const weekNum = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+      return `${now.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+    }
+
+    document.getElementById('currentWeek').textContent = getCurrentWeekId();
+
+    function showResult(success, data) {
+      const resultDiv = document.getElementById('triggerResult');
+      const contentDiv = document.getElementById('resultContent');
+      resultDiv.classList.remove('hidden');
+      contentDiv.className = `p-4 rounded-lg text-sm font-mono whitespace-pre-wrap ${
+        success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'
+      }`;
+      contentDiv.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function setButtonLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      btn.disabled = loading;
+      if (loading) {
+        btn.dataset.originalText = btn.textContent;
+        btn.textContent = 'Processing...';
+      } else if (btn.dataset.originalText) {
+        btn.textContent = btn.dataset.originalText;
+      }
+    }
+
+    async function triggerSnapshot(type) {
+      const btnId = type === 'start' ? 'btnStartSnapshot' : 'btnEndSnapshot';
+      setButtonLoading(btnId, true);
+      try {
+        const res = await fetch('/admin/trigger/snapshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type })
+        });
+        const data = await res.json();
+        showResult(data.success, data);
+        if (data.success) setTimeout(() => location.reload(), 2000);
+      } catch (err) {
+        showResult(false, { error: err.message });
+      } finally {
+        setButtonLoading(btnId, false);
+      }
+    }
+
+    async function triggerCalculation() {
+      setButtonLoading('btnCalculate', true);
+      try {
+        const res = await fetch('/admin/trigger/calculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        showResult(data.success, data);
+        if (data.success) setTimeout(() => location.reload(), 2000);
+      } catch (err) {
+        showResult(false, { error: err.message });
+      } finally {
+        setButtonLoading('btnCalculate', false);
+      }
+    }
+
+    async function triggerFullFlow() {
+      setButtonLoading('btnFullFlow', true);
+      try {
+        const res = await fetch('/admin/trigger/full-flow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        showResult(data.success, data);
+        if (data.success) setTimeout(() => location.reload(), 2000);
+      } catch (err) {
+        showResult(false, { error: err.message });
+      } finally {
+        setButtonLoading('btnFullFlow', false);
+      }
+    }
+  </script>
+</body>
+</html>

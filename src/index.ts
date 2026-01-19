@@ -1,9 +1,11 @@
 import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
+import expressLayouts from 'express-ejs-layouts';
 import path from 'path';
 import { getConfig } from './config/env';
-import { connectDatabase, createIndexes, closeDatabase } from './config/database';
+import { connectDatabase, createIndexes, closeDatabase, getDatabaseStatus, checkDatabaseHealth } from './config/database';
+import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired } from './config/redis';
 import { initializeJobs, stopAllJobs } from './jobs';
 import { initializeBlockchain } from './services/blockchain.service';
 import adminRoutes from './admin/routes/admin.routes';
@@ -13,115 +15,250 @@ import { logger } from './utils/logger';
 // Main Application Entry Point
 // ═══════════════════════════════════════════════════════════
 
+let isShuttingDown = false;
+
 async function main(): Promise<void> {
-  // Validate environment
-  const config = getConfig();
-  logger.info(`Starting AQUARI Airdrop System (${config.NODE_ENV})`);
-  logger.info(`Mock mode: ${config.MOCK_MODE}`);
+  try {
+    // Validate environment
+    const config = getConfig();
 
-  // Connect to MongoDB
-  const db = await connectDatabase();
+    logger.info('═══════════════════════════════════════════════════════════');
+    logger.info('  AQUARI Weekly Airdrop System');
+    logger.info('═══════════════════════════════════════════════════════════');
+    logger.info(`Environment: ${config.NODE_ENV}`);
+    logger.info(`Mock Mode: ${config.MOCK_MODE}`);
+    logger.info(`Port: ${config.PORT}`);
 
-  // Create database indexes
-  await createIndexes(db);
+    // Connect to MongoDB
+    const db = await connectDatabase();
 
-  // Initialize blockchain service
-  initializeBlockchain();
+    // Create database indexes
+    await createIndexes(db);
 
-  // Initialize cron jobs
-  initializeJobs(db);
+    // Initialize blockchain service
+    initializeBlockchain();
 
-  // Create Express app
-  const app = express();
-  app.locals.db = db;
+    // Initialize cron jobs (this also initializes Redis)
+    try {
+      initializeJobs(db);
+    } catch (error) {
+      if (isRedisRequired()) {
+        throw error;
+      }
+      logger.warn('Redis not available - cron jobs disabled (development mode)');
+    }
 
-  // Middleware
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+    // Create Express app
+    const app = express();
+    app.locals.db = db;
 
-  // Session configuration
-  app.use(
-    session({
-      secret: config.SESSION_SECRET,
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        secure: config.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      },
-    })
-  );
+    // Trust proxy for secure cookies behind reverse proxy
+    if (config.NODE_ENV === 'production') {
+      app.set('trust proxy', 1);
+    }
 
-  // View engine
-  app.set('view engine', 'ejs');
-  // Views are in src/admin/views - resolve from project root
-  const viewsPath = path.join(__dirname, '..', 'src', 'admin', 'views');
-  app.set('views', viewsPath);
-  logger.debug(`Views path: ${viewsPath}`);
+    // Middleware
+    app.use(express.json({ limit: '10mb' }));
+    app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+    app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  // Routes
-  app.get('/health', (_req, res) => {
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      mockMode: config.MOCK_MODE,
+    // Session configuration
+    app.use(
+      session({
+        secret: config.SESSION_SECRET,
+        resave: false,
+        saveUninitialized: false,
+        cookie: {
+          secure: config.NODE_ENV === 'production',
+          httpOnly: true,
+          maxAge: 24 * 60 * 60 * 1000, // 24 hours
+          sameSite: 'lax',
+        },
+      })
+    );
+
+    // View engine
+    app.set('view engine', 'ejs');
+    // Views are in src/admin/views - resolve from project root
+    const viewsPath = path.join(__dirname, '..', 'src', 'admin', 'views');
+    app.set('views', viewsPath);
+    logger.debug(`Views path: ${viewsPath}`);
+
+    // Layout engine
+    app.use(expressLayouts);
+    app.set('layout', 'layout');
+
+    // Add mockMode to all views
+    app.use((_req, res, next) => {
+      res.locals.mockMode = config.MOCK_MODE;
+      next();
     });
-  });
 
-  app.use('/admin', adminRoutes);
+    // Health check endpoint with detailed status
+    app.get('/health', async (_req, res) => {
+      const dbStatus = getDatabaseStatus();
+      const redisStatus = getRedisStatus();
 
-  // Redirect root to admin dashboard
-  app.get('/', (_req, res) => {
-    res.redirect('/admin/dashboard');
-  });
+      // Perform actual health checks
+      const [dbHealthy, redisHealthy] = await Promise.all([
+        checkDatabaseHealth(),
+        checkRedisHealth(),
+      ]);
 
-  // 404 handler
-  app.use((_req, res) => {
-    res.status(404).render('error', { message: 'Page not found' });
-  });
+      const isHealthy = dbHealthy && (redisHealthy || !isRedisRequired());
 
-  // Error handler
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    logger.error('Unhandled error:', err);
-    res.status(500).render('error', { message: 'Internal server error' });
-  });
+      res.status(isHealthy ? 200 : 503).json({
+        status: isHealthy ? 'healthy' : 'unhealthy',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        environment: config.NODE_ENV,
+        mockMode: config.MOCK_MODE,
+        services: {
+          database: {
+            ...dbStatus,
+            healthy: dbHealthy,
+          },
+          redis: {
+            ...redisStatus,
+            healthy: redisHealthy,
+            required: isRedisRequired(),
+          },
+        },
+      });
+    });
 
-  // Start server
-  const server = app.listen(config.PORT, () => {
-    logger.info(`Server running on port ${config.PORT}`);
-    logger.info(`Admin dashboard: http://localhost:${config.PORT}/admin`);
-    logger.info(`Health check: http://localhost:${config.PORT}/health`);
-  });
+    // Simple readiness probe
+    app.get('/ready', async (_req, res) => {
+      const dbHealthy = await checkDatabaseHealth();
+      if (dbHealthy && !isShuttingDown) {
+        res.status(200).json({ status: 'ready' });
+      } else {
+        res.status(503).json({ status: 'not ready' });
+      }
+    });
 
-  // Graceful shutdown
-  const shutdown = async (signal: string): Promise<void> => {
-    logger.info(`${signal} received, shutting down gracefully...`);
+    // Liveness probe
+    app.get('/live', (_req, res) => {
+      if (!isShuttingDown) {
+        res.status(200).json({ status: 'alive' });
+      } else {
+        res.status(503).json({ status: 'shutting down' });
+      }
+    });
 
-    server.close(async () => {
-      logger.info('HTTP server closed');
+    // Admin routes
+    app.use('/admin', adminRoutes);
 
-      stopAllJobs();
+    // Redirect root to admin dashboard
+    app.get('/', (_req, res) => {
+      res.redirect('/admin/dashboard');
+    });
+
+    // 404 handler
+    app.use((_req, res) => {
+      res.status(404).render('error', { message: 'Page not found', layout: false });
+    });
+
+    // Global error handler
+    app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      logger.error('Unhandled error:', err);
+
+      // Don't expose error details in production
+      const message = config.NODE_ENV === 'production'
+        ? 'Internal server error'
+        : err.message;
+
+      res.status(500).render('error', { message, layout: false });
+    });
+
+    // Start server
+    const server = app.listen(config.PORT, () => {
+      logger.info('───────────────────────────────────────────────────────────');
+      logger.info(`Server running on port ${config.PORT}`);
+      logger.info(`Admin dashboard: http://localhost:${config.PORT}/admin`);
+      logger.info(`Health check: http://localhost:${config.PORT}/health`);
+      logger.info('───────────────────────────────────────────────────────────');
+    });
+
+    // Configure server timeouts
+    server.keepAliveTimeout = 65000;
+    server.headersTimeout = 66000;
+
+    // Graceful shutdown handler
+    const shutdown = async (signal: string): Promise<void> => {
+      if (isShuttingDown) {
+        logger.warn('Shutdown already in progress...');
+        return;
+      }
+
+      isShuttingDown = true;
+      logger.info(`\n${signal} received - starting graceful shutdown...`);
+
+      // Set a hard timeout for shutdown
+      const shutdownTimeout = setTimeout(() => {
+        logger.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 30000);
+
+      try {
+        // Stop accepting new connections
+        await new Promise<void>((resolve, reject) => {
+          server.close((err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+        logger.info('HTTP server closed');
+
+        // Stop cron jobs
+        stopAllJobs();
+        logger.info('Cron jobs stopped');
+
+        // Close Redis connection
+        await closeRedis();
+
+        // Close database connection
+        await closeDatabase();
+
+        clearTimeout(shutdownTimeout);
+        logger.info('Graceful shutdown complete');
+        process.exit(0);
+      } catch (error) {
+        logger.error('Error during shutdown:', error);
+        clearTimeout(shutdownTimeout);
+        process.exit(1);
+      }
+    };
+
+    // Register shutdown handlers
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
+    // Handle uncaught exceptions
+    process.on('uncaughtException', (error) => {
+      logger.error('Uncaught exception:', error);
+      shutdown('UNCAUGHT_EXCEPTION').catch(() => process.exit(1));
+    });
+
+    // Handle unhandled promise rejections
+    process.on('unhandledRejection', (reason, promise) => {
+      logger.error('Unhandled rejection at:', promise, 'reason:', reason);
+    });
+
+  } catch (error) {
+    logger.error('Fatal error during startup:', error);
+
+    // Attempt cleanup
+    try {
+      await closeRedis();
       await closeDatabase();
+    } catch {
+      // Ignore cleanup errors
+    }
 
-      logger.info('Shutdown complete');
-      process.exit(0);
-    });
-
-    // Force shutdown after 30 seconds
-    setTimeout(() => {
-      logger.error('Forced shutdown after timeout');
-      process.exit(1);
-    }, 30000);
-  };
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+    process.exit(1);
+  }
 }
 
 // Run the application
-main().catch((err) => {
-  logger.error('Fatal error during startup:', err);
-  process.exit(1);
-});
+main();

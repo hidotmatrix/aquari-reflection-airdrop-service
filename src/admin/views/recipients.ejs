@@ -1,55 +1,70 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recipients - AQUARI Airdrop Admin</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 min-h-screen">
-  <%- include('partials/nav') %>
-  <main class="max-w-7xl mx-auto py-6 px-4">
-    <h1 class="text-2xl font-bold mb-6">Recipients</h1>
-    <form class="bg-white rounded-lg shadow p-4 mb-6 flex space-x-4">
-      <select name="weekId" class="border rounded px-3 py-2">
-        <option value="">All Weeks</option>
-        <% weeks.forEach(w => { %>
-        <option value="<%= w %>" <%= filters.weekId === w ? 'selected' : '' %>><%= w %></option>
-        <% }) %>
-      </select>
-      <select name="status" class="border rounded px-3 py-2">
-        <option value="">All Statuses</option>
-        <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>Pending</option>
-        <option value="completed" <%= filters.status === 'completed' ? 'selected' : '' %>>Completed</option>
-        <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
-      </select>
-      <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">Filter</button>
-    </form>
-    <div class="bg-white rounded-lg shadow overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <% recipients.forEach(r => { %>
-          <tr>
-            <td class="px-6 py-4 font-mono text-sm"><a href="/admin/search?address=<%= r.address %>" class="text-indigo-600 hover:underline"><%= r.address.slice(0,10) %>...<%= r.address.slice(-8) %></a></td>
-            <td class="px-6 py-4"><%= r.weekId %></td>
-            <td class="px-6 py-4 font-medium"><%= r.rewardFormatted %></td>
-            <td class="px-6 py-4"><span class="px-2 py-1 text-xs rounded <%= r.status === 'completed' ? 'bg-green-100 text-green-800' : r.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800' %>"><%= r.status %></span></td>
-            <td class="px-6 py-4 font-mono text-xs"><%= r.txHash ? r.txHash.slice(0,10) + '...' : '-' %></td>
-          </tr>
-          <% }) %>
-        </tbody>
-      </table>
-    </div>
-    <%- include('partials/pagination', { pagination }) %>
-  </main>
-</body>
-</html>
+<div class="mb-8">
+  <h1 class="text-2xl font-semibold text-white">Recipients</h1>
+  <p class="text-gray-500 text-sm mt-1">Airdrop recipients by week</p>
+</div>
+
+<!-- Filters -->
+<form class="bg-dark-700 border border-dark-500 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-center">
+  <select name="weekId" class="bg-dark-800 border border-dark-500 text-gray-300 text-sm rounded-lg px-3 py-2 focus:border-cyan-500 focus:outline-none">
+    <option value="">All Weeks</option>
+    <% weeks.forEach(w => { %>
+    <option value="<%= w %>" <%= filters.weekId === w ? 'selected' : '' %>><%= w %></option>
+    <% }) %>
+  </select>
+  <select name="status" class="bg-dark-800 border border-dark-500 text-gray-300 text-sm rounded-lg px-3 py-2 focus:border-cyan-500 focus:outline-none">
+    <option value="">All Statuses</option>
+    <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>Pending</option>
+    <option value="completed" <%= filters.status === 'completed' ? 'selected' : '' %>>Completed</option>
+    <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+  </select>
+  <button type="submit" class="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white text-sm font-medium rounded-lg transition-colors">Filter</button>
+</form>
+
+<!-- Table -->
+<div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
+  <table class="w-full">
+    <thead>
+      <tr class="bg-dark-800/50">
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-dark-600">
+      <% recipients.forEach(r => { %>
+      <tr class="hover:bg-dark-600/30 transition-colors">
+        <td class="px-5 py-3">
+          <a href="/admin/search?address=<%= r.address %>" class="font-mono text-sm text-cyan-400 hover:text-cyan-300"><%= r.address.slice(0,10) %>...<%= r.address.slice(-8) %></a>
+        </td>
+        <td class="px-5 py-3 font-mono text-sm text-white"><%= r.weekId %></td>
+        <td class="px-5 py-3 text-sm text-emerald-400 font-medium"><%= r.rewardFormatted %></td>
+        <td class="px-5 py-3">
+          <span class="px-2 py-0.5 text-xs rounded-full
+            <%= r.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+               r.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+               'bg-yellow-500/20 text-yellow-400' %>">
+            <%= r.status %>
+          </span>
+        </td>
+        <td class="px-5 py-3 font-mono text-xs text-gray-500"><%= r.txHash ? r.txHash.slice(0,10) + '...' : '—' %></td>
+      </tr>
+      <% }) %>
+      <% if (recipients.length === 0) { %>
+      <tr>
+        <td colspan="5" class="px-5 py-8 text-center text-gray-500 text-sm">No recipients found</td>
+      </tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="mt-4 flex justify-center gap-2">
+  <% for (let i = 1; i <= pagination.totalPages; i++) { %>
+  <a href="?page=<%= i %><%= filters.weekId ? '&weekId=' + filters.weekId : '' %><%= filters.status ? '&status=' + filters.status : '' %>"
+     class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>"><%= i %></a>
+  <% } %>
+</div>
+<% } %>

@@ -23,7 +23,7 @@ export function showLogin(req: Request, res: Response): void {
     res.redirect('/admin/dashboard');
     return;
   }
-  res.render('login', { error: null });
+  res.render('login', { error: null, layout: false });
 }
 
 export function handleLogin(req: Request, res: Response): void {
@@ -43,7 +43,7 @@ export function handleLogin(req: Request, res: Response): void {
     return;
   }
 
-  res.render('login', { error: 'Invalid username or password' });
+  res.render('login', { error: 'Invalid username or password', layout: false });
 }
 
 export function handleLogout(req: Request, res: Response): void {
@@ -125,14 +125,14 @@ export async function snapshotDetail(req: Request, res: Response): Promise<void>
   try {
     objectId = new ObjectId(id);
   } catch {
-    res.status(400).render('error', { message: 'Invalid snapshot ID' });
+    res.status(400).render('error', { message: 'Invalid snapshot ID', layout: false });
     return;
   }
 
   const snapshot = await db.collection<Snapshot>('snapshots').findOne({ _id: objectId });
 
   if (!snapshot) {
-    res.status(404).render('error', { message: 'Snapshot not found' });
+    res.status(404).render('error', { message: 'Snapshot not found', layout: false });
     return;
   }
 
@@ -188,7 +188,7 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
   try {
     objectId = new ObjectId(id);
   } catch {
-    res.status(400).render('error', { message: 'Invalid distribution ID' });
+    res.status(400).render('error', { message: 'Invalid distribution ID', layout: false });
     return;
   }
 
@@ -197,7 +197,7 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
     .findOne({ _id: objectId });
 
   if (!distribution) {
-    res.status(404).render('error', { message: 'Distribution not found' });
+    res.status(404).render('error', { message: 'Distribution not found', layout: false });
     return;
   }
 
@@ -300,14 +300,14 @@ export async function batchDetail(req: Request, res: Response): Promise<void> {
   try {
     objectId = new ObjectId(id);
   } catch {
-    res.status(400).render('error', { message: 'Invalid batch ID' });
+    res.status(400).render('error', { message: 'Invalid batch ID', layout: false });
     return;
   }
 
   const batch = await db.collection<Batch>('batches').findOne({ _id: objectId });
 
   if (!batch) {
-    res.status(404).render('error', { message: 'Batch not found' });
+    res.status(404).render('error', { message: 'Batch not found', layout: false });
     return;
   }
 

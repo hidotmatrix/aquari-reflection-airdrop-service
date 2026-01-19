@@ -1,100 +1,106 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Search - AQUARI Airdrop Admin</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 min-h-screen">
-  <%- include('partials/nav') %>
-  <main class="max-w-7xl mx-auto py-6 px-4">
-    <h1 class="text-2xl font-bold mb-6">Search by Wallet Address</h1>
+<div class="mb-8">
+  <h1 class="text-2xl font-semibold text-white">Search</h1>
+  <p class="text-gray-500 text-sm mt-1">Look up wallet address history</p>
+</div>
 
-    <form class="bg-white rounded-lg shadow p-6 mb-6">
-      <div class="flex space-x-4">
-        <input type="text" name="address" value="<%= address %>" placeholder="0x..."
-          class="flex-1 border rounded px-4 py-2 font-mono" pattern="^0x[a-fA-F0-9]{40}$">
-        <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700">Search</button>
-      </div>
-      <% if (error) { %>
-      <div class="mt-4 text-red-600"><%= error %></div>
-      <% } %>
-    </form>
+<!-- Search Form -->
+<form class="bg-dark-700 border border-dark-500 rounded-xl p-5 mb-6">
+  <div class="flex gap-3">
+    <input type="text" name="address" value="<%= address %>" placeholder="0x..."
+      class="flex-1 bg-dark-800 border border-dark-500 text-white text-sm rounded-lg px-4 py-2.5 font-mono placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
+      pattern="^0x[a-fA-F0-9]{40}$">
+    <button type="submit" class="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-white text-sm font-medium rounded-lg transition-colors">Search</button>
+  </div>
+  <% if (error) { %>
+  <div class="mt-3 text-red-400 text-sm"><%= error %></div>
+  <% } %>
+</form>
 
-    <% if (address && !error) { %>
-    <div class="mb-6">
-      <div class="flex space-x-4 border-b">
-        <a href="?address=<%= address %>&tab=airdrops"
-          class="px-4 py-2 <%= tab === 'airdrops' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600' %>">
-          Airdrop History
-        </a>
-        <a href="?address=<%= address %>&tab=balances"
-          class="px-4 py-2 <%= tab === 'balances' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600' %>">
-          Balance History
-        </a>
-      </div>
-    </div>
+<% if (address && !error) { %>
+<!-- Tabs -->
+<div class="mb-6 flex border-b border-dark-600">
+  <a href="?address=<%= address %>&tab=airdrops"
+    class="px-4 py-2 text-sm <%= tab === 'airdrops' ? 'border-b-2 border-cyan-500 text-cyan-400' : 'text-gray-500 hover:text-gray-300' %>">
+    Airdrop History
+  </a>
+  <a href="?address=<%= address %>&tab=balances"
+    class="px-4 py-2 text-sm <%= tab === 'balances' ? 'border-b-2 border-cyan-500 text-cyan-400' : 'text-gray-500 hover:text-gray-300' %>">
+    Balance History
+  </a>
+</div>
 
-    <% if (results && results.length > 0) { %>
-    <div class="bg-white rounded-lg shadow overflow-hidden">
-      <% if (tab === 'balances') { %>
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <% results.forEach(r => { %>
-          <tr>
-            <td class="px-6 py-4 font-medium"><%= r.weekId %></td>
-            <td class="px-6 py-4"><%= r.balanceFormatted %> AQUARI</td>
-          </tr>
-          <% }) %>
-        </tbody>
-      </table>
-      <% } else { %>
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">End</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">MIN</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          <% results.forEach(r => { %>
-          <tr>
-            <td class="px-6 py-4 font-medium"><%= r.weekId %></td>
-            <td class="px-6 py-4 text-sm"><%= r.balances?.start ? (BigInt(r.balances.start) / BigInt(10**18)).toString() : '-' %></td>
-            <td class="px-6 py-4 text-sm"><%= r.balances?.end ? (BigInt(r.balances.end) / BigInt(10**18)).toString() : '-' %></td>
-            <td class="px-6 py-4 text-sm font-medium"><%= r.balances?.min ? (BigInt(r.balances.min) / BigInt(10**18)).toString() : '-' %></td>
-            <td class="px-6 py-4 font-medium text-green-600"><%= r.rewardFormatted %></td>
-            <td class="px-6 py-4"><span class="px-2 py-1 text-xs rounded <%= r.status === 'completed' ? 'bg-green-100 text-green-800' : r.status === 'failed' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800' %>"><%= r.status %></span></td>
-            <td class="px-6 py-4">
-              <% if (r.txHash) { %>
-              <a href="https://basescan.org/tx/<%= r.txHash %>" target="_blank" class="text-indigo-600 hover:underline font-mono text-xs"><%= r.txHash.slice(0,10) %>...</a>
-              <% } else { %>-<% } %>
-            </td>
-          </tr>
-          <% }) %>
-        </tbody>
-      </table>
-      <% } %>
-    </div>
-    <%- include('partials/pagination', { pagination }) %>
-    <% } else if (results) { %>
-    <div class="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-      No records found for this address
-    </div>
-    <% } %>
-    <% } %>
-  </main>
-</body>
-</html>
+<% if (results && results.length > 0) { %>
+<div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
+  <% if (tab === 'balances') { %>
+  <table class="w-full">
+    <thead>
+      <tr class="bg-dark-800/50">
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-dark-600">
+      <% results.forEach(r => { %>
+      <tr class="hover:bg-dark-600/30 transition-colors">
+        <td class="px-5 py-3 font-mono text-sm text-white"><%= r.weekId %></td>
+        <td class="px-5 py-3 text-sm text-gray-300"><%= r.balanceFormatted %> AQUARI</td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } else { %>
+  <table class="w-full">
+    <thead>
+      <tr class="bg-dark-800/50">
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">End</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">MIN</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-dark-600">
+      <% results.forEach(r => { %>
+      <tr class="hover:bg-dark-600/30 transition-colors">
+        <td class="px-5 py-3 font-mono text-sm text-white"><%= r.weekId %></td>
+        <td class="px-5 py-3 text-sm text-gray-400"><%= r.balances?.start ? (BigInt(r.balances.start) / BigInt(10**18)).toString() : '—' %></td>
+        <td class="px-5 py-3 text-sm text-gray-400"><%= r.balances?.end ? (BigInt(r.balances.end) / BigInt(10**18)).toString() : '—' %></td>
+        <td class="px-5 py-3 text-sm text-white font-medium"><%= r.balances?.min ? (BigInt(r.balances.min) / BigInt(10**18)).toString() : '—' %></td>
+        <td class="px-5 py-3 text-sm text-emerald-400 font-medium"><%= r.rewardFormatted %></td>
+        <td class="px-5 py-3">
+          <span class="px-2 py-0.5 text-xs rounded-full
+            <%= r.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+               r.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+               'bg-yellow-500/20 text-yellow-400' %>">
+            <%= r.status %>
+          </span>
+        </td>
+        <td class="px-5 py-3">
+          <% if (r.txHash) { %>
+          <a href="https://basescan.org/tx/<%= r.txHash %>" target="_blank" class="text-cyan-400 hover:text-cyan-300 font-mono text-xs"><%= r.txHash.slice(0,10) %>...</a>
+          <% } else { %><span class="text-gray-600">—</span><% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="mt-4 flex justify-center gap-2">
+  <% for (let i = 1; i <= pagination.totalPages; i++) { %>
+  <a href="?address=<%= address %>&tab=<%= tab %>&page=<%= i %>"
+     class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>"><%= i %></a>
+  <% } %>
+</div>
+<% } %>
+
+<% } else if (results) { %>
+<div class="bg-dark-700 border border-dark-500 rounded-xl p-8 text-center text-gray-500 text-sm">
+  No records found for this address
+</div>
+<% } %>
+<% } %>

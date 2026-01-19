@@ -23,64 +23,160 @@ export interface FetchHoldersResult {
   totalSupply?: string;
 }
 
+export interface FetchPageResult {
+  holders: MoralisHolderResponse[];
+  nextCursor: string | null;
+  totalSupply?: string;
+}
+
+export interface TokenStats {
+  totalHolders: number;
+  totalSupply?: string;
+}
+
+/**
+ * Fetch token stats (total holder count) from Moralis
+ */
+export async function fetchTokenStats(tokenAddress: string): Promise<TokenStats> {
+  const config = getConfig();
+
+  // Fetch just the first page to get metadata
+  const url = new URL(`${BASE_URL}/erc20/${tokenAddress}/owners`);
+  url.searchParams.set('chain', CHAIN);
+  url.searchParams.set('limit', '1'); // Just need metadata, not actual holders
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'X-API-Key': config.MORALIS_API_KEY,
+    },
+  });
+
+  if (response.status === 429) {
+    throw new Error('RATE_LIMITED');
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Moralis API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = (await response.json()) as { page_size?: string; total_supply?: string };
+
+  // Moralis returns page info - we need to estimate total from pagination
+  // Unfortunately Moralis doesn't return total count directly
+  // We'll estimate based on first fetch or use a cached value
+  return {
+    totalHolders: data.page_size ? parseInt(data.page_size) : 0,
+    totalSupply: data.total_supply,
+  };
+}
+
+/**
+ * Fetch a single page of token holders
+ */
+export async function fetchHoldersPage(
+  tokenAddress: string,
+  cursor?: string | null
+): Promise<FetchPageResult> {
+  const config = getConfig();
+
+  const url = new URL(`${BASE_URL}/erc20/${tokenAddress}/owners`);
+  url.searchParams.set('chain', CHAIN);
+  url.searchParams.set('limit', '100');
+  url.searchParams.set('order', 'DESC');
+  if (cursor) {
+    url.searchParams.set('cursor', cursor);
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'X-API-Key': config.MORALIS_API_KEY,
+    },
+  });
+
+  if (response.status === 429) {
+    // Rate limited - throw specific error for retry handling
+    throw new Error('RATE_LIMITED');
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Moralis API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = (await response.json()) as MoralisApiResponse;
+
+  return {
+    holders: data.result,
+    nextCursor: data.cursor || null,
+    totalSupply: data.total_supply,
+  };
+}
+
 /**
  * Fetch all token holders from Moralis API with pagination
+ * Now with better rate limiting and resumable cursor support
  */
 export async function fetchAllTokenHolders(
   tokenAddress: string,
-  onProgress?: (count: number, cursor: string | null) => void
+  onProgress?: (count: number, cursor: string | null) => void,
+  startCursor?: string | null
 ): Promise<FetchHoldersResult> {
-  const config = getConfig();
   const holders: MoralisHolderResponse[] = [];
-  let cursor = '';
+  let cursor = startCursor || '';
   let apiCallCount = 0;
   let totalSupply: string | undefined;
+  let consecutiveErrors = 0;
+  const MAX_CONSECUTIVE_ERRORS = 5;
 
-  logger.info(`Fetching holders for token ${tokenAddress} on ${CHAIN}`);
+  logger.info(`Fetching holders for token ${tokenAddress} on ${CHAIN}${startCursor ? ' (resuming)' : ''}`);
 
   do {
-    const url = new URL(`${BASE_URL}/erc20/${tokenAddress}/owners`);
-    url.searchParams.set('chain', CHAIN);
-    url.searchParams.set('limit', '100');
-    url.searchParams.set('order', 'DESC');
-    if (cursor) {
-      url.searchParams.set('cursor', cursor);
-    }
+    try {
+      const result = await fetchHoldersPage(tokenAddress, cursor || undefined);
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'X-API-Key': config.MORALIS_API_KEY,
-      },
-    });
+      apiCallCount++;
+      consecutiveErrors = 0; // Reset on success
 
-    apiCallCount++;
+      if (!totalSupply && result.totalSupply) {
+        totalSupply = result.totalSupply;
+      }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error(`Moralis API error: ${response.status} - ${errorText}`);
-      throw new Error(`Moralis API error: ${response.status} - ${errorText}`);
-    }
+      holders.push(...result.holders);
+      cursor = result.nextCursor || '';
 
-    const data = (await response.json()) as MoralisApiResponse;
+      if (onProgress) {
+        onProgress(holders.length, cursor || null);
+      }
 
-    if (!totalSupply && data.total_supply) {
-      totalSupply = data.total_supply;
-    }
+      logger.debug(`Fetched ${result.holders.length} holders, total: ${holders.length}, cursor: ${cursor ? 'yes' : 'no'}`);
 
-    holders.push(...data.result);
-    cursor = data.cursor;
+      // Rate limiting - 500ms between requests to avoid 429
+      if (cursor) {
+        await sleep(500);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
 
-    if (onProgress) {
-      onProgress(holders.length, cursor || null);
-    }
+      if (message === 'RATE_LIMITED') {
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          logger.error(`Too many rate limit errors, stopping at ${holders.length} holders`);
+          throw new Error(`Rate limited after fetching ${holders.length} holders. Cursor: ${cursor}`);
+        }
 
-    logger.debug(`Fetched ${data.result.length} holders, total: ${holders.length}, cursor: ${cursor ? 'yes' : 'no'}`);
+        // Exponential backoff for rate limits
+        const backoffMs = Math.min(2000 * Math.pow(2, consecutiveErrors), 30000);
+        logger.warn(`Rate limited, waiting ${backoffMs}ms before retry (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+        await sleep(backoffMs);
+        continue; // Retry same cursor
+      }
 
-    // Rate limiting - small delay between requests
-    if (cursor) {
-      await sleep(100);
+      throw error;
     }
   } while (cursor !== '');
 

@@ -4,17 +4,18 @@ import { logger } from '../utils/logger';
 import { getWeekId } from '../utils/week';
 import {
   Snapshot,
+  SnapshotProgress,
   createSnapshot,
   Holder,
   fromMoralisResponse,
 } from '../models';
 import {
-  fetchHoldersWithRetry,
+  fetchHoldersPage,
   fetchMockHolders,
 } from './moralis.service';
 
 // ═══════════════════════════════════════════════════════════
-// Snapshot Service
+// Snapshot Service - Now with incremental progress tracking
 // ═══════════════════════════════════════════════════════════
 
 export interface TakeSnapshotResult {
@@ -22,8 +23,32 @@ export interface TakeSnapshotResult {
   holdersInserted: number;
 }
 
+// In-memory progress tracking for real-time status
+const activeSnapshots = new Map<string, {
+  weekId: string;
+  fetched: number;
+  inserted: number;
+  cursor: string | null;
+  status: string;
+  startedAt: Date;
+}>();
+
 /**
- * Take a snapshot of all token holders
+ * Get snapshot progress (for real-time status)
+ */
+export function getSnapshotProgress(weekId: string) {
+  return activeSnapshots.get(weekId) || null;
+}
+
+/**
+ * Get all active snapshots
+ */
+export function getActiveSnapshots() {
+  return Array.from(activeSnapshots.values());
+}
+
+/**
+ * Take a snapshot of all token holders with incremental saving
  */
 export async function takeSnapshot(
   db: Db,
@@ -36,74 +61,199 @@ export async function takeSnapshot(
 
   logger.info(`Taking snapshot for week ${targetWeekId}`);
 
-  // Check if snapshot already exists
+  // Check if snapshot already exists and is completed
   const existing = await db.collection<Snapshot>('snapshots').findOne({ weekId: targetWeekId });
   if (existing && existing.status === 'completed') {
-    throw new Error(`Snapshot for week ${targetWeekId} already exists`);
+    throw new Error(`Snapshot for week ${targetWeekId} already exists and is completed`);
   }
 
-  // Create or update snapshot record
+  // Check if we can resume
   let snapshotId: ObjectId;
+  let resumeCursor: string | null = null;
+  let existingHolderCount = 0;
+
   if (existing) {
     snapshotId = existing._id!;
+
+    // If in_progress, we can resume
+    if (existing.status === 'in_progress' && existing.progress?.lastCursor) {
+      resumeCursor = existing.progress.lastCursor;
+      existingHolderCount = existing.progress.insertedCount || 0;
+      logger.info(`Resuming snapshot from cursor, already have ${existingHolderCount} holders`);
+    } else {
+      // Reset for fresh start
+      await db.collection<Holder>('holders').deleteMany({ weekId: targetWeekId });
+    }
+
     await db.collection<Snapshot>('snapshots').updateOne(
       { _id: snapshotId },
       {
         $set: {
           status: 'in_progress',
+          progress: {
+            fetchedCount: existingHolderCount,
+            insertedCount: existingHolderCount,
+            lastCursor: resumeCursor,
+            lastUpdated: new Date(),
+            startedAt: existing.progress?.startedAt || new Date(),
+          },
         },
-        $unset: {
-          error: '',
-        },
+        $unset: { error: '' },
       }
     );
   } else {
     const snapshot = createSnapshot({ weekId: targetWeekId });
     snapshot.status = 'in_progress';
+    snapshot.progress = {
+      fetchedCount: 0,
+      insertedCount: 0,
+      lastCursor: null,
+      lastUpdated: new Date(),
+      startedAt: new Date(),
+    };
     const result = await db.collection<Snapshot>('snapshots').insertOne(snapshot);
     snapshotId = result.insertedId;
   }
 
+  // Track in memory for real-time status
+  activeSnapshots.set(targetWeekId, {
+    weekId: targetWeekId,
+    fetched: existingHolderCount,
+    inserted: existingHolderCount,
+    cursor: resumeCursor,
+    status: 'fetching',
+    startedAt: new Date(),
+  });
+
   try {
-    // Fetch holders from Moralis (or mock)
-    const fetchFn = config.MOCK_MODE ? fetchMockHolders : fetchHoldersWithRetry;
-    const { holders: moralisHolders, apiCallCount, totalSupply } = await fetchFn(
-      config.AQUARI_ADDRESS,
-      config.MOCK_MODE ? 500 : 3, // Mock: 500 holders, Real: 3 retries
-      onProgress
-    );
-
-    // Clear existing holders for this week (in case of retry)
-    await db.collection<Holder>('holders').deleteMany({ weekId: targetWeekId });
-
-    // Convert and insert holders in batches
-    const BATCH_SIZE = 1000;
+    const useMockData = config.MOCK_SNAPSHOTS;
+    let totalInserted = existingHolderCount;
+    let apiCallCount = 0;
     let totalBalance = 0n;
-    let insertedCount = 0;
 
-    for (let i = 0; i < moralisHolders.length; i += BATCH_SIZE) {
-      const batch = moralisHolders.slice(i, i + BATCH_SIZE);
-      const holders = batch.map(h => fromMoralisResponse(h, targetWeekId, snapshotId));
+    if (useMockData) {
+      // Mock mode - generate fake data
+      logger.info('[MOCK] Using mock holder data');
+      const { holders: mockHolders, apiCallCount: mockCalls } = await fetchMockHolders(
+        config.AQUARI_ADDRESS,
+        500,
+        onProgress
+      );
 
-      // Calculate total balance
+      await db.collection<Holder>('holders').deleteMany({ weekId: targetWeekId });
+
+      const holders = mockHolders.map(h => fromMoralisResponse(h, targetWeekId, snapshotId));
       for (const holder of holders) {
         totalBalance += BigInt(holder.balance);
       }
 
       await db.collection<Holder>('holders').insertMany(holders);
-      insertedCount += holders.length;
+      totalInserted = holders.length;
+      apiCallCount = mockCalls;
+    } else {
+      // Real mode - fetch from Moralis with incremental saving
+      logger.info(`Fetching real holder data from Moralis for ${config.AQUARI_ADDRESS}`);
 
-      logger.debug(`Inserted holders batch: ${insertedCount}/${moralisHolders.length}`);
+      let cursor = resumeCursor || '';
+      let consecutiveErrors = 0;
+      const MAX_ERRORS = 5;
+      const BATCH_SIZE = 100; // Insert every 100 holders
+
+      let pendingHolders: Holder[] = [];
+
+      do {
+        try {
+          const result = await fetchHoldersPage(config.AQUARI_ADDRESS, cursor || undefined);
+          apiCallCount++;
+          consecutiveErrors = 0;
+
+          // Convert holders
+          const holders = result.holders.map(h => fromMoralisResponse(h, targetWeekId, snapshotId));
+          pendingHolders.push(...holders);
+
+          // Calculate balance
+          for (const holder of holders) {
+            totalBalance += BigInt(holder.balance);
+          }
+
+          cursor = result.nextCursor || '';
+
+          // Update in-memory progress
+          const progress = activeSnapshots.get(targetWeekId);
+          if (progress) {
+            progress.fetched = totalInserted + pendingHolders.length;
+            progress.cursor = cursor;
+          }
+
+          // Insert batch if we have enough
+          if (pendingHolders.length >= BATCH_SIZE || !cursor) {
+            if (pendingHolders.length > 0) {
+              await db.collection<Holder>('holders').insertMany(pendingHolders);
+              totalInserted += pendingHolders.length;
+
+              // Update progress in DB
+              await db.collection<Snapshot>('snapshots').updateOne(
+                { _id: snapshotId },
+                {
+                  $set: {
+                    'progress.fetchedCount': totalInserted,
+                    'progress.insertedCount': totalInserted,
+                    'progress.lastCursor': cursor,
+                    'progress.lastUpdated': new Date(),
+                  },
+                }
+              );
+
+              if (progress) {
+                progress.inserted = totalInserted;
+              }
+
+              logger.info(`Progress: ${totalInserted} holders inserted, cursor: ${cursor ? 'continuing...' : 'done'}`);
+              pendingHolders = [];
+            }
+          }
+
+          if (onProgress) {
+            onProgress(totalInserted, cursor || null);
+          }
+
+          // Rate limiting
+          if (cursor) {
+            await sleep(500);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+
+          if (message === 'RATE_LIMITED') {
+            consecutiveErrors++;
+            if (consecutiveErrors >= MAX_ERRORS) {
+              // Save what we have and fail gracefully
+              if (pendingHolders.length > 0) {
+                await db.collection<Holder>('holders').insertMany(pendingHolders);
+                totalInserted += pendingHolders.length;
+              }
+              throw new Error(`Rate limited. Saved ${totalInserted} holders. Resume with cursor.`);
+            }
+
+            const backoffMs = Math.min(2000 * Math.pow(2, consecutiveErrors), 30000);
+            logger.warn(`Rate limited, waiting ${backoffMs}ms (attempt ${consecutiveErrors}/${MAX_ERRORS})`);
+            await sleep(backoffMs);
+            continue;
+          }
+
+          throw error;
+        }
+      } while (cursor);
     }
 
     const durationMs = Date.now() - startTime;
 
-    // Update snapshot with results
+    // Mark as completed
     await db.collection<Snapshot>('snapshots').updateOne(
       { _id: snapshotId },
       {
         $set: {
-          totalHolders: insertedCount,
+          totalHolders: totalInserted,
           totalBalance: totalBalance.toString(),
           metadata: {
             fetchDurationMs: durationMs,
@@ -112,18 +262,21 @@ export async function takeSnapshot(
           status: 'completed',
           completedAt: new Date(),
         },
+        $unset: { progress: '' },
       }
     );
+
+    activeSnapshots.delete(targetWeekId);
 
     const finalSnapshot = await db.collection<Snapshot>('snapshots').findOne({ _id: snapshotId });
 
     logger.info(
-      `Snapshot completed: ${insertedCount} holders, ${durationMs}ms, ${apiCallCount} API calls`
+      `Snapshot completed: ${totalInserted} holders, ${durationMs}ms, ${apiCallCount} API calls`
     );
 
     return {
       snapshot: finalSnapshot!,
-      holdersInserted: insertedCount,
+      holdersInserted: totalInserted,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -137,6 +290,11 @@ export async function takeSnapshot(
         },
       }
     );
+
+    const progress = activeSnapshots.get(targetWeekId);
+    if (progress) {
+      progress.status = 'failed';
+    }
 
     logger.error(`Snapshot failed: ${errorMessage}`);
     throw error;
@@ -210,4 +368,12 @@ export async function getRecentSnapshots(
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
+}
+
+// ═══════════════════════════════════════════════════════════
+// Utilities
+// ═══════════════════════════════════════════════════════════
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }

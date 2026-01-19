@@ -9,7 +9,16 @@ export type SnapshotStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 export interface SnapshotMetadata {
   fetchDurationMs: number;
   apiCallCount: number;
-  moralisCursor?: string;
+}
+
+export interface SnapshotProgress {
+  fetchedCount: number;
+  insertedCount: number;
+  estimatedTotal?: number;  // Estimated total holders (for progress %)
+  lastCursor: string | null;
+  lastUpdated: Date;
+  startedAt: Date;
+  jobId?: string;  // BullMQ job ID processing this snapshot
 }
 
 export interface Snapshot {
@@ -19,6 +28,7 @@ export interface Snapshot {
   totalHolders: number;
   totalBalance: string;
   metadata?: SnapshotMetadata;
+  progress?: SnapshotProgress;
   status: SnapshotStatus;
   error?: string | undefined;
   createdAt: Date;

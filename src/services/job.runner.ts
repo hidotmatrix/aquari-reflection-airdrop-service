@@ -1,0 +1,402 @@
+import { Db, ObjectId } from 'mongodb';
+import { getConfig } from '../config/env';
+import { logger } from '../utils/logger';
+import { Job, JobType } from '../models/Job';
+import { Snapshot, Holder, fromMoralisResponse } from '../models';
+import {
+  createNewJob,
+  updateJobStatus,
+  createJobContext,
+  JobContext,
+} from './job.service';
+import { fetchHoldersPage, fetchMockHolders } from './moralis.service';
+import { calculateRewards } from './calculation.service';
+
+// ═══════════════════════════════════════════════════════════
+// Job Runner - Executes jobs with progress tracking
+// ═══════════════════════════════════════════════════════════
+
+// Track running jobs to prevent duplicates
+const runningJobs = new Set<string>();
+
+/**
+ * Start a job (non-blocking - runs in background)
+ */
+export async function startJob(
+  db: Db,
+  type: JobType,
+  weekId: string
+): Promise<Job> {
+  const jobKey = `${type}-${weekId}`;
+
+  // Check if already running
+  if (runningJobs.has(jobKey)) {
+    const existing = await db.collection<Job>('jobs').findOne({
+      type,
+      weekId,
+      status: 'running',
+    });
+    if (existing) return existing;
+  }
+
+  // Create the job
+  const job = await createNewJob(db, type, weekId);
+
+  // If job was already created and is running, return it
+  if (job.status === 'running') {
+    return job;
+  }
+
+  // Mark as running
+  runningJobs.add(jobKey);
+
+  // Run the job in the background (don't await)
+  runJobAsync(db, job).finally(() => {
+    runningJobs.delete(jobKey);
+  });
+
+  return job;
+}
+
+/**
+ * Run job asynchronously
+ */
+async function runJobAsync(db: Db, job: Job): Promise<void> {
+  const ctx = createJobContext(db, job._id!);
+
+  try {
+    await updateJobStatus(db, job._id!, 'running');
+    await ctx.log(`Starting ${job.type} job for ${job.weekId}`);
+
+    switch (job.type) {
+      case 'snapshot':
+        await runSnapshotJob(ctx, job.weekId);
+        break;
+      case 'calculation':
+        await runCalculationJob(ctx, job.weekId);
+        break;
+      case 'airdrop':
+        await runAirdropJob(ctx, job.weekId);
+        break;
+      case 'full-flow':
+        await runFullFlowJob(ctx, job.weekId);
+        break;
+    }
+
+    await updateJobStatus(db, job._id!, 'completed');
+    await ctx.success(`Job completed successfully`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await ctx.error(`Job failed: ${message}`);
+    await updateJobStatus(db, job._id!, 'failed', message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Snapshot Job
+// ═══════════════════════════════════════════════════════════
+
+async function runSnapshotJob(ctx: JobContext, weekId: string): Promise<void> {
+  const config = getConfig();
+  const db = ctx.db;
+
+  await ctx.log(`Taking snapshot for week ${weekId}`);
+
+  // Check if already completed
+  const existing = await db.collection<Snapshot>('snapshots').findOne({ weekId });
+  if (existing?.status === 'completed') {
+    await ctx.log(`Snapshot already completed with ${existing.totalHolders} holders`);
+    await ctx.setResult({ snapshotId: existing._id?.toString(), totalHolders: existing.totalHolders });
+    return;
+  }
+
+  // Create or get snapshot
+  let snapshotId: ObjectId;
+  let resumeCursor: string | null = null;
+  let existingCount = 0;
+
+  if (existing) {
+    snapshotId = existing._id!;
+    if (existing.status === 'in_progress' && existing.progress?.lastCursor) {
+      resumeCursor = existing.progress.lastCursor;
+      existingCount = existing.progress.insertedCount || 0;
+      await ctx.log(`Resuming from cursor, already have ${existingCount} holders`);
+    } else if (existing.status === 'failed') {
+      await db.collection<Holder>('holders').deleteMany({ weekId });
+      await ctx.log(`Cleared failed snapshot data, starting fresh`);
+    }
+  } else {
+    const snapshot: Snapshot = {
+      weekId,
+      timestamp: new Date(),
+      totalHolders: 0,
+      totalBalance: '0',
+      status: 'in_progress',
+      progress: {
+        fetchedCount: 0,
+        insertedCount: 0,
+        lastCursor: null,
+        lastUpdated: new Date(),
+        startedAt: new Date(),
+        jobId: ctx.jobId.toString(),
+      },
+      createdAt: new Date(),
+    };
+    const result = await db.collection<Snapshot>('snapshots').insertOne(snapshot);
+    snapshotId = result.insertedId;
+    await ctx.log(`Created snapshot record`);
+  }
+
+  // Update snapshot status
+  await db.collection<Snapshot>('snapshots').updateOne(
+    { _id: snapshotId },
+    {
+      $set: {
+        status: 'in_progress',
+        'progress.jobId': ctx.jobId.toString(),
+        'progress.lastUpdated': new Date(),
+      },
+    }
+  );
+
+  try {
+    let totalInserted = existingCount;
+    let apiCallCount = 0;
+    let totalBalance = 0n;
+
+    if (config.MOCK_SNAPSHOTS) {
+      await ctx.log(`[MOCK MODE] Generating mock holder data`);
+      const { holders: mockHolders, apiCallCount: mockCalls } = await fetchMockHolders(
+        config.AQUARI_ADDRESS,
+        500
+      );
+
+      await db.collection<Holder>('holders').deleteMany({ weekId });
+
+      const holders = mockHolders.map((h) => fromMoralisResponse(h, weekId, snapshotId));
+      for (const holder of holders) {
+        totalBalance += BigInt(holder.balance);
+      }
+
+      await db.collection<Holder>('holders').insertMany(holders);
+      totalInserted = holders.length;
+      apiCallCount = mockCalls;
+
+      await ctx.setProgress(totalInserted, totalInserted, 'Completed');
+      await ctx.log(`Inserted ${totalInserted} mock holders`);
+    } else {
+      await ctx.log(`Fetching real holders from Moralis API`);
+      await ctx.setProgress(existingCount, 10000, 'Fetching holders...');
+
+      let cursor = resumeCursor || '';
+      let consecutiveErrors = 0;
+      const MAX_ERRORS = 5;
+      const BATCH_SIZE = 100;
+      let pendingHolders: Holder[] = [];
+
+      do {
+        try {
+          const result = await fetchHoldersPage(config.AQUARI_ADDRESS, cursor || undefined);
+          apiCallCount++;
+          consecutiveErrors = 0;
+
+          const holders = result.holders.map((h) =>
+            fromMoralisResponse(h, weekId, snapshotId)
+          );
+          pendingHolders.push(...holders);
+
+          for (const holder of holders) {
+            totalBalance += BigInt(holder.balance);
+          }
+
+          cursor = result.nextCursor || '';
+
+          // Insert batch
+          if (pendingHolders.length >= BATCH_SIZE || !cursor) {
+            if (pendingHolders.length > 0) {
+              await db.collection<Holder>('holders').insertMany(pendingHolders);
+              totalInserted += pendingHolders.length;
+
+              // Update snapshot progress
+              await db.collection<Snapshot>('snapshots').updateOne(
+                { _id: snapshotId },
+                {
+                  $set: {
+                    'progress.fetchedCount': totalInserted,
+                    'progress.insertedCount': totalInserted,
+                    'progress.lastCursor': cursor,
+                    'progress.lastUpdated': new Date(),
+                  },
+                }
+              );
+
+              // Update job progress
+              const estimatedTotal = Math.max(totalInserted + (cursor ? 1000 : 0), 10000);
+              await ctx.setProgress(totalInserted, estimatedTotal, cursor ? 'Fetching...' : 'Finalizing...');
+
+              // Log every 500 holders
+              if (totalInserted % 500 === 0 || !cursor) {
+                await ctx.log(`Progress: ${totalInserted.toLocaleString()} holders saved`, {
+                  apiCalls: apiCallCount,
+                  hasMore: !!cursor,
+                });
+              }
+
+              pendingHolders = [];
+            }
+          }
+
+          // Rate limiting
+          if (cursor) {
+            await sleep(500);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+
+          if (message === 'RATE_LIMITED') {
+            consecutiveErrors++;
+            if (consecutiveErrors >= MAX_ERRORS) {
+              // Save what we have
+              if (pendingHolders.length > 0) {
+                await db.collection<Holder>('holders').insertMany(pendingHolders);
+                totalInserted += pendingHolders.length;
+              }
+              throw new Error(`Rate limited. Saved ${totalInserted} holders. Can resume later.`);
+            }
+
+            const backoffMs = Math.min(2000 * Math.pow(2, consecutiveErrors), 30000);
+            await ctx.warn(`Rate limited, waiting ${backoffMs}ms (attempt ${consecutiveErrors}/${MAX_ERRORS})`);
+            await sleep(backoffMs);
+            continue;
+          }
+
+          throw error;
+        }
+      } while (cursor);
+    }
+
+    // Mark snapshot as completed
+    await db.collection<Snapshot>('snapshots').updateOne(
+      { _id: snapshotId },
+      {
+        $set: {
+          totalHolders: totalInserted,
+          totalBalance: totalBalance.toString(),
+          metadata: { fetchDurationMs: 0, apiCallCount },
+          status: 'completed',
+          completedAt: new Date(),
+        },
+        $unset: { progress: '' },
+      }
+    );
+
+    await ctx.success(`Snapshot completed: ${totalInserted.toLocaleString()} holders`);
+    await ctx.setResult({
+      snapshotId: snapshotId.toString(),
+      totalHolders: totalInserted,
+      apiCallCount,
+    });
+  } catch (error) {
+    await db.collection<Snapshot>('snapshots').updateOne(
+      { _id: snapshotId },
+      {
+        $set: {
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+        },
+      }
+    );
+    throw error;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Calculation Job
+// ═══════════════════════════════════════════════════════════
+
+async function runCalculationJob(ctx: JobContext, weekId: string): Promise<void> {
+  const db = ctx.db;
+
+  await ctx.log(`Calculating rewards for week ${weekId}`);
+  await ctx.setProgress(0, 3, 'Loading snapshots...');
+
+  // Get start and end snapshots
+  const startWeekId = `${weekId}-start`;
+  const endWeekId = `${weekId}-end`;
+
+  const startSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: startWeekId });
+  const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: endWeekId });
+
+  if (!startSnapshot) {
+    throw new Error(`Start snapshot not found: ${startWeekId}`);
+  }
+  if (startSnapshot.status !== 'completed') {
+    throw new Error(`Start snapshot not completed (status: ${startSnapshot.status})`);
+  }
+
+  if (!endSnapshot) {
+    throw new Error(`End snapshot not found: ${endWeekId}`);
+  }
+  if (endSnapshot.status !== 'completed') {
+    throw new Error(`End snapshot not completed (status: ${endSnapshot.status})`);
+  }
+
+  await ctx.log(`Found snapshots - Start: ${startSnapshot.totalHolders} holders, End: ${endSnapshot.totalHolders} holders`);
+  await ctx.setProgress(1, 3, 'Calculating rewards...');
+
+  const result = await calculateRewards(db, weekId, startSnapshot._id!, endSnapshot._id!);
+
+  await ctx.setProgress(3, 3, 'Completed');
+  await ctx.success(`Rewards calculated: ${result.eligibleCount} eligible, ${result.batchCount} batches`);
+  await ctx.setResult({
+    distributionId: result.distribution._id?.toString(),
+    eligibleCount: result.eligibleCount,
+    excludedCount: result.excludedCount,
+    batchCount: result.batchCount,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// Airdrop Job (placeholder)
+// ═══════════════════════════════════════════════════════════
+
+async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
+  await ctx.log(`Processing airdrop for week ${weekId}`);
+  await ctx.setProgress(0, 1, 'Not implemented yet');
+  await ctx.warn(`Airdrop execution not implemented - transactions would be sent here`);
+  await ctx.setProgress(1, 1, 'Completed');
+}
+
+// ═══════════════════════════════════════════════════════════
+// Full Flow Job
+// ═══════════════════════════════════════════════════════════
+
+async function runFullFlowJob(ctx: JobContext, weekId: string): Promise<void> {
+  await ctx.log(`Running full flow for week ${weekId}`);
+
+  // Step 1: Start snapshot
+  await ctx.log(`Step 1/3: Taking start snapshot`);
+  await ctx.setProgress(0, 3, 'Start snapshot...');
+  await runSnapshotJob(ctx, `${weekId}-start`);
+
+  // Step 2: End snapshot
+  await ctx.log(`Step 2/3: Taking end snapshot`);
+  await ctx.setProgress(1, 3, 'End snapshot...');
+  await runSnapshotJob(ctx, `${weekId}-end`);
+
+  // Step 3: Calculate
+  await ctx.log(`Step 3/3: Calculating rewards`);
+  await ctx.setProgress(2, 3, 'Calculating...');
+  await runCalculationJob(ctx, weekId);
+
+  await ctx.setProgress(3, 3, 'Completed');
+  await ctx.success(`Full flow completed for week ${weekId}`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Utilities
+// ═══════════════════════════════════════════════════════════
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

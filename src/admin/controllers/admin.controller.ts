@@ -10,9 +10,10 @@ import {
   Distribution,
   Recipient,
   Batch,
+  Job,
 } from '../../models';
-import { takeSnapshot } from '../../services/snapshot.service';
-import { calculateRewards } from '../../services/calculation.service';
+import { startJob } from '../../services/job.runner';
+import { getJobById, getActiveJobs as getActiveJobsFromDb, getRecentJobs } from '../../services/job.service';
 
 // ═══════════════════════════════════════════════════════════
 // LOGIN / LOGOUT
@@ -393,7 +394,52 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
 }
 
 // ═══════════════════════════════════════════════════════════
-// TEST TRIGGERS (Manual execution for testing)
+// DEV TOOLS (Clear data for testing)
+// ═══════════════════════════════════════════════════════════
+
+export async function clearData(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const config = getConfig();
+  const { collection, weekId } = req.body;
+
+  // Only allow in development mode
+  if (config.NODE_ENV === 'production') {
+    res.status(403).json({ success: false, error: 'Not allowed in production' });
+    return;
+  }
+
+  try {
+    const results: Record<string, number> = {};
+
+    if (collection === 'all' || !collection) {
+      // Clear all collections
+      const query = weekId ? { weekId: { $regex: weekId } } : {};
+
+      results.snapshots = (await db.collection('snapshots').deleteMany(query)).deletedCount;
+      results.holders = (await db.collection('holders').deleteMany(query)).deletedCount;
+      results.distributions = (await db.collection('distributions').deleteMany(query)).deletedCount;
+      results.recipients = (await db.collection('recipients').deleteMany(query)).deletedCount;
+      results.batches = (await db.collection('batches').deleteMany(query)).deletedCount;
+      results.jobs = (await db.collection('jobs').deleteMany(query)).deletedCount;
+    } else {
+      // Clear specific collection
+      const query = weekId ? { weekId: { $regex: weekId } } : {};
+      results[collection] = (await db.collection(collection).deleteMany(query)).deletedCount;
+    }
+
+    res.json({
+      success: true,
+      message: weekId ? `Cleared data for week ${weekId}` : 'Cleared all data',
+      deleted: results,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// JOB TRIGGERS (Start background jobs)
 // ═══════════════════════════════════════════════════════════
 
 export async function triggerSnapshot(req: Request, res: Response): Promise<void> {
@@ -409,18 +455,18 @@ export async function triggerSnapshot(req: Request, res: Response): Promise<void
     const weekId = getCurrentWeekId();
     const snapshotWeekId = `${weekId}-${type}`;
 
-    const result = await takeSnapshot(db, snapshotWeekId);
+    // Start the job
+    const job = await startJob(db, 'snapshot', snapshotWeekId);
 
     res.json({
       success: true,
-      message: `Snapshot ${snapshotWeekId} created successfully`,
-      snapshot: {
-        id: result.snapshot._id,
-        weekId: result.snapshot.weekId,
-        totalHolders: result.snapshot.totalHolders,
-        status: result.snapshot.status,
+      message: `Snapshot job started for ${snapshotWeekId}`,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
       },
-      holdersInserted: result.holdersInserted,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -433,37 +479,19 @@ export async function triggerCalculation(req: Request, res: Response): Promise<v
 
   try {
     const weekId = getCurrentWeekId();
-    const startWeekId = `${weekId}-start`;
-    const endWeekId = `${weekId}-end`;
 
-    // Get snapshots
-    const startSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: startWeekId });
-    const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: endWeekId });
-
-    if (!startSnapshot) {
-      res.status(400).json({ success: false, error: `Start snapshot not found. Take "${startWeekId}" snapshot first.` });
-      return;
-    }
-
-    if (!endSnapshot) {
-      res.status(400).json({ success: false, error: `End snapshot not found. Take "${endWeekId}" snapshot first.` });
-      return;
-    }
-
-    const result = await calculateRewards(db, weekId, startSnapshot._id!, endSnapshot._id!);
+    // Start the job
+    const job = await startJob(db, 'calculation', weekId);
 
     res.json({
       success: true,
-      message: `Rewards calculated for week ${weekId}`,
-      distribution: {
-        id: result.distribution._id,
-        weekId: result.distribution.weekId,
-        status: result.distribution.status,
-        stats: result.distribution.stats,
+      message: `Calculation job started for ${weekId}`,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
       },
-      eligibleCount: result.eligibleCount,
-      excludedCount: result.excludedCount,
-      batchCount: result.batchCount,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -476,63 +504,124 @@ export async function triggerFullFlow(req: Request, res: Response): Promise<void
 
   try {
     const weekId = getCurrentWeekId();
-    const results: Record<string, unknown> = { weekId };
 
-    // Step 1: Take start snapshot
-    const startWeekId = `${weekId}-start`;
-    let startSnapshotId: ObjectId;
-    const existingStart = await db.collection<Snapshot>('snapshots').findOne({ weekId: startWeekId });
+    // Start full flow job
+    const job = await startJob(db, 'full-flow', weekId);
 
-    if (!existingStart || existingStart.status === 'failed') {
-      const startResult = await takeSnapshot(db, startWeekId);
-      startSnapshotId = startResult.snapshot._id!;
-      results.startSnapshot = {
-        id: startSnapshotId,
-        holdersInserted: startResult.holdersInserted,
-        status: 'created',
-      };
-    } else {
-      startSnapshotId = existingStart._id;
-      results.startSnapshot = { id: startSnapshotId, status: 'already_exists' };
+    res.json({
+      success: true,
+      message: `Full flow job started for ${weekId}`,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// JOB STATUS (Real-time progress and logs)
+// ═══════════════════════════════════════════════════════════
+
+export async function getJobStatusEndpoint(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const { jobId, weekId } = req.query;
+
+  try {
+    // Get specific job by ID
+    let job: Job | null = null;
+    if (jobId) {
+      job = await getJobById(db, jobId as string);
     }
 
-    // Step 2: Take end snapshot
-    const endWeekId = `${weekId}-end`;
-    let endSnapshotId: ObjectId;
-    const existingEnd = await db.collection<Snapshot>('snapshots').findOne({ weekId: endWeekId });
+    // Get active jobs
+    const activeJobs = await getActiveJobsFromDb(db);
 
-    if (!existingEnd || existingEnd.status === 'failed') {
-      const endResult = await takeSnapshot(db, endWeekId);
-      endSnapshotId = endResult.snapshot._id!;
-      results.endSnapshot = {
-        id: endSnapshotId,
-        holdersInserted: endResult.holdersInserted,
-        status: 'created',
-      };
-    } else {
-      endSnapshotId = existingEnd._id;
-      results.endSnapshot = { id: endSnapshotId, status: 'already_exists' };
-    }
+    // Get recent jobs for history
+    const recentJobs = await getRecentJobs(db, 10);
 
-    // Step 3: Calculate rewards
-    const existingDistribution = await db.collection<Distribution>('distributions').findOne({ weekId });
-
-    if (existingDistribution && existingDistribution.status === 'completed') {
-      results.distribution = { id: existingDistribution._id, status: 'already_completed' };
-    } else {
-      const calcResult = await calculateRewards(db, weekId, startSnapshotId, endSnapshotId);
-      results.distribution = {
-        id: calcResult.distribution._id,
-        status: calcResult.distribution.status,
-        eligibleCount: calcResult.eligibleCount,
-        batchCount: calcResult.batchCount,
-      };
+    // Get snapshot status if weekId provided
+    let snapshot: Snapshot | null = null;
+    if (weekId) {
+      snapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: weekId as string });
     }
 
     res.json({
       success: true,
-      message: `Full flow completed for week ${weekId}`,
-      results,
+      job: job ? {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+        progress: job.progress,
+        logs: job.logs.slice(-50), // Last 50 logs
+        result: job.result,
+        error: job.error,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+      } : null,
+      activeJobs: activeJobs.map(j => ({
+        id: j._id,
+        type: j.type,
+        weekId: j.weekId,
+        status: j.status,
+        progress: j.progress,
+      })),
+      recentJobs: recentJobs.map(j => ({
+        id: j._id,
+        type: j.type,
+        weekId: j.weekId,
+        status: j.status,
+        createdAt: j.createdAt,
+        completedAt: j.completedAt,
+      })),
+      snapshot: snapshot ? {
+        id: snapshot._id,
+        weekId: snapshot.weekId,
+        status: snapshot.status,
+        totalHolders: snapshot.totalHolders,
+        progress: snapshot.progress,
+        error: snapshot.error,
+      } : null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+export async function getJobLogs(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const { jobId } = req.params;
+
+  if (!jobId) {
+    res.status(400).json({ success: false, error: 'Job ID required' });
+    return;
+  }
+
+  try {
+    const job = await getJobById(db, jobId);
+
+    if (!job) {
+      res.status(404).json({ success: false, error: 'Job not found' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+        progress: job.progress,
+      },
+      logs: job.logs,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

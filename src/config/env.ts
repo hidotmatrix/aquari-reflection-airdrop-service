@@ -10,6 +10,8 @@ interface EnvConfig {
   PORT: number;
   LOG_LEVEL: string;
   MOCK_MODE: boolean;
+  MOCK_SNAPSHOTS: boolean;  // Use fake holder data (for testing without Moralis API)
+  MOCK_TRANSACTIONS: boolean; // Don't send real transactions (safe for testing)
 
   // Database
   MONGODB_URI: string;
@@ -80,6 +82,12 @@ export function validateEnv(): EnvConfig {
     PORT: getEnvVarAsInt('PORT', 3000),
     LOG_LEVEL: getEnvVar('LOG_LEVEL', false) || 'info',
     MOCK_MODE: getEnvVarAsBool('MOCK_MODE', true),
+    // MOCK_SNAPSHOTS defaults to MOCK_MODE value if not set
+    MOCK_SNAPSHOTS: process.env.MOCK_SNAPSHOTS !== undefined
+      ? getEnvVarAsBool('MOCK_SNAPSHOTS', true)
+      : getEnvVarAsBool('MOCK_MODE', true),
+    // MOCK_TRANSACTIONS defaults to true (safe default - never send real tx accidentally)
+    MOCK_TRANSACTIONS: getEnvVarAsBool('MOCK_TRANSACTIONS', true),
 
     MONGODB_URI: getEnvVar('MONGODB_URI'),
     REDIS_URL: getEnvVar('REDIS_URL', false) || 'redis://localhost:6379',

@@ -29,9 +29,16 @@ router.get('/batches', ctrl.listBatches);
 router.get('/batches/:id', ctrl.batchDetail);
 router.get('/search', ctrl.searchByAddress);
 
-// Test triggers (manual execution)
+// Job triggers (start background jobs)
 router.post('/trigger/snapshot', ctrl.triggerSnapshot);
 router.post('/trigger/calculate', ctrl.triggerCalculation);
 router.post('/trigger/full-flow', ctrl.triggerFullFlow);
+
+// Job status and logs
+router.get('/jobs/status', ctrl.getJobStatusEndpoint);
+router.get('/jobs/:jobId/logs', ctrl.getJobLogs);
+
+// Dev tools (only works in development)
+router.post('/dev/clear-data', ctrl.clearData);
 
 export default router;

@@ -71,9 +71,87 @@
         </button>
       </div>
     </div>
-    <div id="triggerResult" class="mt-4 hidden">
-      <pre id="resultContent" class="p-3 rounded-lg text-xs font-mono overflow-auto max-h-48"></pre>
+
+    <!-- Dev Tools -->
+    <% if (typeof mockMode === 'undefined' || !mockMode || true) { %>
+    <div class="mt-4 pt-4 border-t border-dark-600">
+      <div class="flex flex-wrap gap-3 items-center">
+        <span class="text-gray-500 text-xs uppercase">Dev Tools:</span>
+        <button onclick="clearCurrentWeek()" id="btnClearWeek"
+          class="px-3 py-1.5 bg-dark-600 hover:bg-red-500/20 text-gray-400 hover:text-red-400 text-xs rounded border border-dark-500 hover:border-red-500/50 transition-colors disabled:opacity-50">
+          Clear Current Week
+        </button>
+        <button onclick="clearAllData()" id="btnClearAll"
+          class="px-3 py-1.5 bg-dark-600 hover:bg-red-500/20 text-gray-400 hover:text-red-400 text-xs rounded border border-dark-500 hover:border-red-500/50 transition-colors disabled:opacity-50">
+          Clear All Data
+        </button>
+      </div>
     </div>
+    <% } %>
+  </div>
+</div>
+
+<!-- Job Terminal / Live Logs -->
+<div id="jobTerminal" class="bg-dark-700 border border-dark-500 rounded-xl mb-8 hidden">
+  <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
+    <div class="flex items-center gap-3">
+      <div id="jobStatusIndicator" class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
+      <div>
+        <h2 class="text-base font-medium text-white">Job Progress</h2>
+        <p id="jobTitle" class="text-gray-500 text-xs mt-0.5">Running job...</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <div class="text-right">
+        <p class="text-gray-500 text-xs">Progress</p>
+        <p id="jobProgress" class="font-mono text-sm text-cyan-400">0%</p>
+      </div>
+      <button onclick="minimizeTerminal()" class="text-gray-500 hover:text-white transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Progress Bar -->
+  <div class="px-5 py-3 bg-dark-800/50">
+    <div class="flex justify-between text-xs text-gray-500 mb-2">
+      <span id="jobStage">Initializing...</span>
+      <span id="jobElapsed">0s</span>
+    </div>
+    <div class="w-full bg-dark-600 rounded-full h-2">
+      <div id="jobProgressBar" class="bg-gradient-to-r from-cyan-500 to-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+    </div>
+  </div>
+
+  <!-- Terminal Output -->
+  <div id="terminalOutput" class="bg-dark-900 font-mono text-xs overflow-auto max-h-80 p-4 space-y-1">
+    <div class="text-gray-500">Waiting for job logs...</div>
+  </div>
+
+  <!-- Terminal Footer -->
+  <div class="px-5 py-3 bg-dark-800/30 border-t border-dark-600 flex justify-between items-center">
+    <div class="flex items-center gap-2 text-xs text-gray-500">
+      <span>Job ID:</span>
+      <span id="currentJobId" class="font-mono text-gray-400">—</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="clearTerminal()" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">Clear</button>
+      <span class="text-dark-500">|</span>
+      <button onclick="closeTerminal()" class="text-xs text-gray-500 hover:text-red-400 transition-colors">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Jobs -->
+<div id="recentJobsSection" class="bg-dark-700 border border-dark-500 rounded-xl mb-8">
+  <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
+    <h2 class="text-base font-medium text-white">Recent Jobs</h2>
+    <button onclick="refreshJobs()" class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">Refresh</button>
+  </div>
+  <div id="recentJobsList" class="divide-y divide-dark-600">
+    <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading jobs...</div>
   </div>
 </div>
 
@@ -124,6 +202,10 @@
 </div>
 
 <script>
+  // ═══════════════════════════════════════════════════════════
+  // Utility Functions
+  // ═══════════════════════════════════════════════════════════
+
   function getCurrentWeekId() {
     const now = new Date();
     const start = new Date(now.getFullYear(), 0, 1);
@@ -133,52 +215,444 @@
   }
   document.getElementById('currentWeek').textContent = getCurrentWeekId();
 
-  function showResult(success, data) {
-    const el = document.getElementById('triggerResult');
-    const content = document.getElementById('resultContent');
-    el.classList.remove('hidden');
-    content.className = `p-3 rounded-lg text-xs font-mono overflow-auto max-h-48 ${success ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`;
-    content.textContent = JSON.stringify(data, null, 2);
+  function formatNumber(num) {
+    return (num || 0).toLocaleString();
+  }
+
+  function formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
+    return `${seconds}s`;
+  }
+
+  function formatTime(date) {
+    return new Date(date).toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
   }
 
   function setLoading(id, loading) {
     const btn = document.getElementById(id);
+    if (!btn) return;
     btn.disabled = loading;
     if (loading) { btn.dataset.text = btn.textContent; btn.textContent = 'Processing...'; }
     else if (btn.dataset.text) btn.textContent = btn.dataset.text;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // Terminal / Job Tracking
+  // ═══════════════════════════════════════════════════════════
+
+  let currentJobId = null;
+  let jobPollInterval = null;
+  let jobStartTime = null;
+  let lastLogCount = 0;
+  let isViewingHistoricalJob = false; // Track if viewing completed/failed job
+
+  function showTerminal(jobId, title, historical = false) {
+    currentJobId = jobId;
+    jobStartTime = Date.now();
+    lastLogCount = 0;
+    isViewingHistoricalJob = historical;
+
+    document.getElementById('jobTerminal').classList.remove('hidden');
+    document.getElementById('jobTitle').textContent = title;
+    document.getElementById('currentJobId').textContent = jobId;
+    document.getElementById('terminalOutput').innerHTML = '<div class="text-cyan-400">● Loading logs...</div>';
+    document.getElementById('jobProgress').textContent = '0%';
+    document.getElementById('jobProgressBar').style.width = '0%';
+    document.getElementById('jobStage').textContent = 'Loading...';
+    document.getElementById('jobStatusIndicator').className = 'w-2 h-2 bg-cyan-400 rounded-full animate-pulse';
+
+    // Start polling
+    if (jobPollInterval) clearInterval(jobPollInterval);
+    jobPollInterval = setInterval(pollJobStatus, 1000);
+    pollJobStatus(); // Immediate first poll
+  }
+
+  function closeTerminal() {
+    document.getElementById('jobTerminal').classList.add('hidden');
+    if (jobPollInterval) {
+      clearInterval(jobPollInterval);
+      jobPollInterval = null;
+    }
+    currentJobId = null;
+  }
+
+  function minimizeTerminal() {
+    const output = document.getElementById('terminalOutput');
+    output.classList.toggle('hidden');
+  }
+
+  function clearTerminal() {
+    document.getElementById('terminalOutput').innerHTML = '<div class="text-gray-500">Terminal cleared</div>';
+    lastLogCount = 0;
+  }
+
+  function appendLog(log) {
+    const output = document.getElementById('terminalOutput');
+    const div = document.createElement('div');
+
+    const time = formatTime(log.timestamp);
+    let colorClass = 'text-gray-300';
+    let icon = '  ';
+
+    switch (log.level) {
+      case 'info':
+        colorClass = 'text-gray-300';
+        icon = '○';
+        break;
+      case 'warn':
+        colorClass = 'text-yellow-400';
+        icon = '⚠';
+        break;
+      case 'error':
+        colorClass = 'text-red-400';
+        icon = '✗';
+        break;
+      case 'success':
+        colorClass = 'text-emerald-400';
+        icon = '✓';
+        break;
+    }
+
+    div.className = colorClass;
+    div.innerHTML = `<span class="text-gray-600">[${time}]</span> ${icon} ${escapeHtml(log.message)}`;
+
+    if (log.data && Object.keys(log.data).length > 0) {
+      const dataSpan = document.createElement('span');
+      dataSpan.className = 'text-gray-500 ml-2';
+      dataSpan.textContent = JSON.stringify(log.data);
+      div.appendChild(dataSpan);
+    }
+
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  async function pollJobStatus() {
+    if (!currentJobId) return;
+
+    try {
+      const res = await fetch(`/admin/jobs/${currentJobId}/logs`);
+      const data = await res.json();
+
+      if (!data.success) {
+        console.error('Failed to fetch job logs:', data.error);
+        return;
+      }
+
+      const job = data.job;
+      const logs = data.logs || [];
+
+      // Update elapsed time
+      const elapsed = Date.now() - jobStartTime;
+      document.getElementById('jobElapsed').textContent = formatDuration(elapsed);
+
+      // Update progress
+      if (job.progress) {
+        const percent = job.progress.percentage || 0;
+        document.getElementById('jobProgress').textContent = `${percent}%`;
+        document.getElementById('jobProgressBar').style.width = `${percent}%`;
+        document.getElementById('jobStage').textContent = job.progress.stage || 'Processing...';
+      }
+
+      // Append new logs
+      if (logs.length > lastLogCount) {
+        const newLogs = logs.slice(lastLogCount);
+        newLogs.forEach(appendLog);
+        lastLogCount = logs.length;
+      }
+
+      // Update status indicator
+      const indicator = document.getElementById('jobStatusIndicator');
+      if (job.status === 'completed') {
+        indicator.className = 'w-2 h-2 bg-emerald-400 rounded-full';
+        document.getElementById('jobProgress').textContent = '100%';
+        document.getElementById('jobProgressBar').style.width = '100%';
+        document.getElementById('jobStage').textContent = 'Completed';
+
+        // Stop polling
+        if (jobPollInterval) {
+          clearInterval(jobPollInterval);
+          jobPollInterval = null;
+        }
+
+        // Only reload if watching a live job (not viewing historical logs)
+        if (!isViewingHistoricalJob) {
+          setTimeout(() => {
+            refreshJobs();
+            location.reload();
+          }, 3000);
+        }
+      } else if (job.status === 'failed') {
+        indicator.className = 'w-2 h-2 bg-red-400 rounded-full';
+        document.getElementById('jobProgressBar').classList.remove('from-cyan-500', 'to-emerald-500');
+        document.getElementById('jobProgressBar').classList.add('bg-red-500');
+        document.getElementById('jobStage').textContent = 'Failed';
+
+        // Stop polling
+        if (jobPollInterval) {
+          clearInterval(jobPollInterval);
+          jobPollInterval = null;
+        }
+      }
+
+    } catch (e) {
+      console.error('Poll error:', e);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Recent Jobs List
+  // ═══════════════════════════════════════════════════════════
+
+  async function refreshJobs() {
+    try {
+      const res = await fetch('/admin/jobs/status');
+      const data = await res.json();
+      console.log('Jobs status:', data);
+
+      if (!data.success) return;
+
+      const container = document.getElementById('recentJobsList');
+      // Use activeJobs and recentJobs from API response
+      const activeJobs = data.activeJobs || data.active || [];
+      const recentJobs = data.recentJobs || data.recent || [];
+      const jobs = [...activeJobs, ...recentJobs];
+
+      if (jobs.length === 0) {
+        container.innerHTML = '<div class="px-5 py-8 text-center text-gray-500 text-sm">No jobs yet</div>';
+        return;
+      }
+
+      container.innerHTML = jobs.slice(0, 10).map(job => {
+        const jobId = job.id || job._id;
+        const statusColors = {
+          pending: 'bg-gray-500/20 text-gray-400',
+          running: 'bg-cyan-500/20 text-cyan-400',
+          completed: 'bg-emerald-500/20 text-emerald-400',
+          failed: 'bg-red-500/20 text-red-400'
+        };
+        const statusColor = statusColors[job.status] || statusColors.pending;
+        const progress = job.progress ? `${job.progress.percentage || 0}%` : '—';
+        const created = job.createdAt ? new Date(job.createdAt).toLocaleString() : '—';
+
+        return `
+          <div class="px-5 py-3 flex items-center justify-between hover:bg-dark-600/30 transition-colors">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-dark-600 flex items-center justify-center">
+                ${getJobIcon(job.type)}
+              </div>
+              <div>
+                <p class="text-sm text-white font-medium">${escapeHtml(job.type)} <span class="text-gray-500">•</span> <span class="font-mono text-gray-400">${escapeHtml(job.weekId)}</span></p>
+                <p class="text-xs text-gray-500">${created}</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-4">
+              ${job.status === 'running' ? `<span class="text-xs text-cyan-400 font-mono">${progress}</span>` : ''}
+              <span class="px-2 py-0.5 text-xs rounded-full ${statusColor}">${job.status}</span>
+              ${job.status === 'running' || job.status === 'completed' || job.status === 'failed' ?
+                `<button onclick="viewJobLogs('${jobId}')" class="text-xs text-cyan-400 hover:text-cyan-300">View Logs</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Check if any active jobs need terminal
+      const activeJob = activeJobs.find(j => j.status === 'running');
+      if (activeJob && !currentJobId) {
+        const jobId = activeJob.id || activeJob._id;
+        showTerminal(jobId, `${activeJob.type} - ${activeJob.weekId}`);
+      }
+
+    } catch (e) {
+      console.error('Failed to refresh jobs:', e);
+    }
+  }
+
+  function getJobIcon(type) {
+    const icons = {
+      snapshot: '<svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>',
+      calculation: '<svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>',
+      airdrop: '<svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+      'full-flow': '<svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>'
+    };
+    return icons[type] || icons.snapshot;
+  }
+
+  async function viewJobLogs(jobId) {
+    // Mark as historical so it won't auto-reload
+    showTerminal(jobId, 'Job Logs', true);
+  }
+
+  // Initialize on page load
+  async function init() {
+    await refreshJobs();
+
+    // Check for any running jobs and show terminal
+    try {
+      const res = await fetch('/admin/jobs/status');
+      const data = await res.json();
+      const activeJobs = data.activeJobs || [];
+      const runningJob = activeJobs.find(j => j.status === 'running');
+
+      if (runningJob) {
+        const jobId = runningJob.id || runningJob._id;
+        console.log('Found running job:', jobId, runningJob);
+        showTerminal(jobId, `${runningJob.type} - ${runningJob.weekId}`);
+      }
+    } catch (e) {
+      console.error('Init error:', e);
+    }
+  }
+
+  init();
+  setInterval(refreshJobs, 5000); // Refresh every 5 seconds
+
+  // ═══════════════════════════════════════════════════════════
+  // Trigger Functions
+  // ═══════════════════════════════════════════════════════════
+
   async function triggerSnapshot(type) {
     const id = type === 'start' ? 'btnStartSnapshot' : 'btnEndSnapshot';
+    const weekId = getCurrentWeekId();
+    const snapshotWeekId = `${weekId}-${type}`;
+
     setLoading(id, true);
+
     try {
-      const res = await fetch('/admin/trigger/snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) });
+      const res = await fetch('/admin/trigger/snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type })
+      });
       const data = await res.json();
-      showResult(data.success, data);
-      if (data.success) setTimeout(() => location.reload(), 1500);
-    } catch (e) { showResult(false, { error: e.message }); }
-    finally { setLoading(id, false); }
+      console.log('Trigger response:', data);
+
+      if (data.success && data.job) {
+        const jobId = data.job.id || data.job._id;
+        showTerminal(jobId, `Snapshot ${type} - ${snapshotWeekId}`);
+      } else {
+        alert(data.error || 'Failed to start job');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setLoading(id, false);
+    }
   }
 
   async function triggerCalculation() {
     setLoading('btnCalculate', true);
+    const weekId = getCurrentWeekId();
+
     try {
-      const res = await fetch('/admin/trigger/calculate', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetch('/admin/trigger/calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
       const data = await res.json();
-      showResult(data.success, data);
-      if (data.success) setTimeout(() => location.reload(), 1500);
-    } catch (e) { showResult(false, { error: e.message }); }
-    finally { setLoading('btnCalculate', false); }
+      console.log('Trigger response:', data);
+
+      if (data.success && data.job) {
+        const jobId = data.job.id || data.job._id;
+        showTerminal(jobId, `Calculation - ${weekId}`);
+      } else {
+        alert(data.error || 'Failed to start job');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setLoading('btnCalculate', false);
+    }
   }
 
   async function triggerFullFlow() {
     setLoading('btnFullFlow', true);
+    const weekId = getCurrentWeekId();
+
     try {
-      const res = await fetch('/admin/trigger/full-flow', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetch('/admin/trigger/full-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
       const data = await res.json();
-      showResult(data.success, data);
-      if (data.success) setTimeout(() => location.reload(), 1500);
-    } catch (e) { showResult(false, { error: e.message }); }
-    finally { setLoading('btnFullFlow', false); }
+      console.log('Trigger response:', data);
+
+      if (data.success && data.job) {
+        const jobId = data.job.id || data.job._id;
+        showTerminal(jobId, `Full Flow - ${weekId}`);
+      } else {
+        alert(data.error || 'Failed to start job');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setLoading('btnFullFlow', false);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Dev Tools
+  // ═══════════════════════════════════════════════════════════
+
+  async function clearCurrentWeek() {
+    if (!confirm('Clear all data for current week? This cannot be undone.')) return;
+    setLoading('btnClearWeek', true);
+    try {
+      const weekId = getCurrentWeekId();
+      const res = await fetch('/admin/dev/clear-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weekId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Data cleared successfully');
+        location.reload();
+      } else {
+        alert(data.error || 'Failed to clear data');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setLoading('btnClearWeek', false);
+    }
+  }
+
+  async function clearAllData() {
+    if (!confirm('Clear ALL data from database? This cannot be undone.')) return;
+    if (!confirm('Are you really sure? ALL snapshots, distributions, recipients, and batches will be deleted.')) return;
+    setLoading('btnClearAll', true);
+    try {
+      const res = await fetch('/admin/dev/clear-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collection: 'all' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('All data cleared successfully');
+        location.reload();
+      } else {
+        alert(data.error || 'Failed to clear data');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setLoading('btnClearAll', false);
+    }
   }
 </script>

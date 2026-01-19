@@ -2,6 +2,7 @@ export {
   type Snapshot,
   type SnapshotStatus,
   type SnapshotMetadata,
+  type SnapshotProgress,
   type CreateSnapshotInput,
   type UpdateSnapshotInput,
   createSnapshot,
@@ -57,3 +58,13 @@ export {
   createDefaultConfig,
   DEFAULT_EXCLUDED_ADDRESSES,
 } from './Config';
+
+export {
+  type Job,
+  type JobType,
+  type JobStatus,
+  type JobLog,
+  type JobProgress,
+  type CreateJobInput,
+  createJob,
+} from './Job';

@@ -6,7 +6,7 @@ import path from 'path';
 import { getConfig } from './config/env';
 import { connectDatabase, createIndexes, closeDatabase, getDatabaseStatus, checkDatabaseHealth } from './config/database';
 import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired } from './config/redis';
-import { initializeJobs, stopAllJobs } from './jobs';
+import { initializeJobs, stopAllJobs, startWorker, stopWorker } from './jobs';
 import { initializeBlockchain } from './services/blockchain.service';
 import adminRoutes from './admin/routes/admin.routes';
 import { logger } from './utils/logger';
@@ -41,6 +41,13 @@ async function main(): Promise<void> {
     // Initialize cron jobs (this also initializes Redis)
     try {
       initializeJobs(db);
+
+      // Start the background worker for job processing
+      // In production, this would run as a separate process
+      if (config.NODE_ENV === 'development') {
+        logger.info('Starting background worker for job processing...');
+        startWorker();
+      }
     } catch (error) {
       if (isRedisRequired()) {
         throw error;
@@ -213,6 +220,10 @@ async function main(): Promise<void> {
         // Stop cron jobs
         stopAllJobs();
         logger.info('Cron jobs stopped');
+
+        // Stop background worker
+        await stopWorker();
+        logger.info('Background worker stopped');
 
         // Close Redis connection
         await closeRedis();

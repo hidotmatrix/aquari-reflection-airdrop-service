@@ -1,122 +1,97 @@
 import cron from 'node-cron';
 import { Db } from 'mongodb';
+import { isRedisRequired } from '../config/redis';
 import { logger } from '../utils/logger';
 import { runSnapshotJob } from './snapshot.job';
 import { runCalculateJob } from './calculate.job';
 import { runAirdropJob } from './airdrop.job';
 
 // ═══════════════════════════════════════════════════════════
-// Job Scheduler - Cron Jobs Initialization
+// Job Scheduler - Manages all cron jobs
 // ═══════════════════════════════════════════════════════════
 
-/*
- * CRON SCHEDULE:
- *
- * JOB 1: SNAPSHOT
- * Schedule: Sunday 23:59 UTC
- * Cron: "59 23 * * 0"
- *
- * JOB 2: CALCULATE
- * Schedule: Monday 00:30 UTC
- * Cron: "30 0 * * 1"
- *
- * JOB 3: AIRDROP
- * Schedule: Monday 01:00 UTC
- * Cron: "0 1 * * 1"
+const jobs: cron.ScheduledTask[] = [];
+
+/**
+ * Initialize all scheduled jobs
  */
-
-interface ScheduledJob {
-  name: string;
-  schedule: string;
-  task: cron.ScheduledTask | null;
-}
-
-const jobs: ScheduledJob[] = [];
-
 export function initializeJobs(db: Db): void {
-  logger.info('Initializing cron jobs...');
+  // Log if Redis is not required (development mode)
+  if (!isRedisRequired()) {
+    logger.info('Redis not required in development mode - cron jobs will run locally');
+  }
 
-  // Job 1: Snapshot - Sunday 23:59 UTC
+  // Sunday 23:59 UTC - Take weekly snapshot
   const snapshotJob = cron.schedule(
-    '59 23 * * 0',
+    '59 23 * * 0', // Sunday 23:59
     async () => {
-      logger.info('Cron triggered: SNAPSHOT');
+      logger.info('[SCHEDULER] Running snapshot job');
       try {
         await runSnapshotJob(db);
       } catch (error) {
-        logger.error('Snapshot job error:', error);
+        logger.error('[SCHEDULER] Snapshot job failed:', error);
       }
     },
-    {
-      scheduled: true,
-      timezone: 'UTC',
-    }
+    { timezone: 'UTC' }
   );
+  jobs.push(snapshotJob);
 
-  jobs.push({ name: 'snapshot', schedule: '59 23 * * 0', task: snapshotJob });
-  logger.info('Scheduled: SNAPSHOT job (Sunday 23:59 UTC)');
-
-  // Job 2: Calculate - Monday 00:30 UTC
-  const calculateJob = cron.schedule(
-    '30 0 * * 1',
+  // Monday 00:30 UTC - Calculate rewards
+  const calculationJob = cron.schedule(
+    '30 0 * * 1', // Monday 00:30
     async () => {
-      logger.info('Cron triggered: CALCULATE');
+      logger.info('[SCHEDULER] Running calculation job');
       try {
         await runCalculateJob(db);
       } catch (error) {
-        logger.error('Calculate job error:', error);
+        logger.error('[SCHEDULER] Calculation job failed:', error);
       }
     },
-    {
-      scheduled: true,
-      timezone: 'UTC',
-    }
+    { timezone: 'UTC' }
   );
+  jobs.push(calculationJob);
 
-  jobs.push({ name: 'calculate', schedule: '30 0 * * 1', task: calculateJob });
-  logger.info('Scheduled: CALCULATE job (Monday 00:30 UTC)');
-
-  // Job 3: Airdrop - Monday 01:00 UTC
+  // Monday 01:00 UTC - Execute airdrops
   const airdropJob = cron.schedule(
-    '0 1 * * 1',
+    '0 1 * * 1', // Monday 01:00
     async () => {
-      logger.info('Cron triggered: AIRDROP');
+      logger.info('[SCHEDULER] Running airdrop job');
       try {
         await runAirdropJob(db);
       } catch (error) {
-        logger.error('Airdrop job error:', error);
+        logger.error('[SCHEDULER] Airdrop job failed:', error);
       }
     },
-    {
-      scheduled: true,
-      timezone: 'UTC',
-    }
+    { timezone: 'UTC' }
   );
+  jobs.push(airdropJob);
 
-  jobs.push({ name: 'airdrop', schedule: '0 1 * * 1', task: airdropJob });
-  logger.info('Scheduled: AIRDROP job (Monday 01:00 UTC)');
-
-  logger.info(`Initialized ${jobs.length} cron jobs`);
+  logger.info('Scheduled jobs initialized:');
+  logger.info('  - Snapshot: Sunday 23:59 UTC');
+  logger.info('  - Calculation: Monday 00:30 UTC');
+  logger.info('  - Airdrop: Monday 01:00 UTC');
 }
 
+/**
+ * Stop all scheduled jobs
+ */
 export function stopAllJobs(): void {
-  for (const job of jobs) {
-    if (job.task) {
-      job.task.stop();
-      logger.info(`Stopped job: ${job.name}`);
-    }
-  }
+  jobs.forEach((job) => job.stop());
+  jobs.length = 0;
+  logger.info('All scheduled jobs stopped');
 }
 
-export function getJobStatus(): Array<{ name: string; schedule: string; active: boolean }> {
-  return jobs.map(job => ({
-    name: job.name,
-    schedule: job.schedule,
-    active: job.task !== null,
-  }));
-}
+// Re-export queue functions for manual triggering
+export {
+  getRedisConnection,
+  getSnapshotQueue,
+  getSnapshotQueueEvents,
+  queueSnapshotJob,
+  getJobStatus,
+  getActiveJobs,
+  closeQueue,
+  type SnapshotJobData,
+  type SnapshotJobResult,
+} from './queue';
 
-// Export individual job runners for manual execution
-export { runSnapshotJob } from './snapshot.job';
-export { runCalculateJob } from './calculate.job';
-export { runAirdropJob } from './airdrop.job';
+export { startWorker, stopWorker } from './snapshot.worker';

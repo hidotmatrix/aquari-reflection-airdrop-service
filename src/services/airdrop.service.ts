@@ -36,9 +36,10 @@ export async function processDistribution(
     throw new Error(`Distribution ${distributionId} not found`);
   }
 
-  if (distribution.status !== 'ready' && distribution.status !== 'processing') {
+  if (!['ready', 'processing', 'failed'].includes(distribution.status)) {
     throw new Error(
-      `Distribution ${distributionId} is not ready for processing (status: ${distribution.status})`
+      `Distribution ${distributionId} is not ready for processing (status: ${distribution.status}). ` +
+      `Must be 'ready', 'processing', or 'failed' to retry.`
     );
   }
 

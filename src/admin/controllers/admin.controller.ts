@@ -957,3 +957,99 @@ export async function startWorkflow(req: Request, res: Response): Promise<void> 
     res.status(500).json({ success: false, error: message });
   }
 }
+
+// ═══════════════════════════════════════════════════════════
+// RETRY FAILED AIRDROP
+// ═══════════════════════════════════════════════════════════
+
+export async function retryFailedAirdrop(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const config = getConfig();
+  const { distributionId, resetRetryCount } = req.body;
+
+  if (!distributionId) {
+    res.status(400).json({ success: false, error: 'distributionId required' });
+    return;
+  }
+
+  try {
+    const distribution = await db.collection<Distribution>('distributions').findOne({
+      _id: new ObjectId(distributionId),
+    });
+
+    if (!distribution) {
+      res.status(404).json({ success: false, error: 'Distribution not found' });
+      return;
+    }
+
+    // Allow retry for failed or processing distributions
+    if (!['failed', 'processing'].includes(distribution.status)) {
+      res.status(400).json({
+        success: false,
+        error: `Distribution must be in "failed" or "processing" status to retry (current: ${distribution.status})`,
+      });
+      return;
+    }
+
+    // Count existing batch stats
+    const batchStats = await db.collection<Batch>('batches').aggregate([
+      { $match: { distributionId: distribution._id } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]).toArray();
+
+    const completedBatches = batchStats.find(s => s._id === 'completed')?.count || 0;
+    const failedBatches = batchStats.find(s => s._id === 'failed')?.count || 0;
+    const pendingBatches = batchStats.find(s => s._id === 'pending')?.count || 0;
+
+    if (failedBatches === 0 && pendingBatches === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'No failed or pending batches to retry. All batches are completed.',
+      });
+      return;
+    }
+
+    // Optionally reset retry counts for failed batches
+    if (resetRetryCount) {
+      await db.collection<Batch>('batches').updateMany(
+        { distributionId: distribution._id, status: 'failed' },
+        { $set: { retryCount: 0, status: 'pending', updatedAt: new Date() }, $unset: { lastError: '' } }
+      );
+
+      await db.collection<Recipient>('recipients').updateMany(
+        { distributionId: distribution._id, status: 'failed' },
+        { $set: { retryCount: 0, status: 'pending', updatedAt: new Date() }, $unset: { error: '' } }
+      );
+    }
+
+    // Update distribution to processing
+    await db.collection<Distribution>('distributions').updateOne(
+      { _id: distribution._id },
+      { $set: { status: 'processing', updatedAt: new Date() } }
+    );
+
+    // Start airdrop job
+    const job = await startJob(db, 'airdrop', distribution.weekId);
+
+    res.json({
+      success: true,
+      message: `Retry started for ${distribution.weekId}`,
+      mode: config.MOCK_TRANSACTIONS ? 'SIMULATED' : 'PRODUCTION',
+      stats: {
+        completedBatches,
+        failedBatches: resetRetryCount ? 0 : failedBatches,
+        pendingBatches: resetRetryCount ? failedBatches + pendingBatches : pendingBatches,
+        totalBatches: completedBatches + failedBatches + pendingBatches,
+      },
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}

@@ -35,6 +35,7 @@ router.post('/trigger/calculate', ctrl.triggerCalculation);
 router.post('/trigger/full-flow', ctrl.triggerFullFlow);
 router.post('/trigger/airdrop', ctrl.triggerAirdrop);
 router.post('/approve-airdrop', ctrl.approveAndExecuteAirdrop);
+router.post('/retry-airdrop', ctrl.retryFailedAirdrop);
 
 // Workflow control (manual start for fork mode)
 router.post('/workflow/start', ctrl.startWorkflow);

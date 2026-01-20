@@ -189,6 +189,12 @@ export async function createIndexes(database: Db): Promise<void> {
       { key: { 'execution.txHash': 1 }, sparse: true }
     ]);
 
+    // RESTRICTED ADDRESSES (bot-restricted by AQUARI contract)
+    await database.collection('restricted_addresses').createIndexes([
+      { key: { address: 1 }, unique: true },
+      { key: { detectedAt: -1 } }
+    ]);
+
     logger.info('Database indexes created successfully');
   } catch (error) {
     logger.error('Error creating database indexes:', error);

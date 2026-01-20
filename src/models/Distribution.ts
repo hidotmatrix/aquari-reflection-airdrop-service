@@ -25,6 +25,8 @@ export interface DistributionStats {
   totalHolders: number;
   eligibleHolders: number;
   excludedHolders: number;
+  configExcluded?: number;    // LPs, foundation, burn address, etc.
+  botRestricted?: number;     // AQUARI antibot restricted addresses
   totalEligibleBalance: string;
   totalDistributed: string;
 }

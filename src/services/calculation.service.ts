@@ -98,9 +98,24 @@ export async function calculateRewards(
     // Get all unique addresses from both snapshots
     const allAddresses = new Set([...startBalances.keys(), ...endBalances.keys()]);
 
-    // Get excluded addresses
-    const excludedSet = new Set(
+    // Get excluded addresses from config (LPs, foundation, etc.)
+    const configExcludedSet = new Set(
       systemConfig.excludedAddresses.map(a => a.toLowerCase())
+    );
+
+    // Get bot-restricted addresses from restricted_addresses collection
+    const restrictedAddresses = await db
+      .collection<{ address: string }>('restricted_addresses')
+      .find({})
+      .project({ address: 1 })
+      .toArray();
+
+    const botRestrictedSet = new Set(
+      restrictedAddresses.map(r => r.address.toLowerCase())
+    );
+
+    logger.info(
+      `Exclusions: ${configExcludedSet.size} config addresses, ${botRestrictedSet.size} bot-restricted addresses`
     );
 
     // Calculate eligible holders
@@ -111,13 +126,20 @@ export async function calculateRewards(
       minBalance: string;
     }> = [];
 
-    let excludedCount = 0;
+    let configExcludedCount = 0;
+    let botRestrictedCount = 0;
     let totalEligibleBalance = 0n;
 
     for (const address of allAddresses) {
-      // Skip excluded addresses
-      if (excludedSet.has(address)) {
-        excludedCount++;
+      // Skip config-excluded addresses (LPs, foundation, etc.)
+      if (configExcludedSet.has(address)) {
+        configExcludedCount++;
+        continue;
+      }
+
+      // Skip bot-restricted addresses (AQUARI antibot)
+      if (botRestrictedSet.has(address)) {
+        botRestrictedCount++;
         continue;
       }
 
@@ -141,8 +163,9 @@ export async function calculateRewards(
       }
     }
 
+    const totalExcluded = configExcludedCount + botRestrictedCount;
     logger.info(
-      `Found ${eligibleHolders.length} eligible holders, ${excludedCount} excluded`
+      `Found ${eligibleHolders.length} eligible holders (excluded: ${configExcludedCount} config + ${botRestrictedCount} bot-restricted = ${totalExcluded} total)`
     );
 
     // Clear existing recipients for this distribution
@@ -224,7 +247,9 @@ export async function calculateRewards(
           stats: {
             totalHolders: allAddresses.size,
             eligibleHolders: eligibleHolders.length,
-            excludedHolders: excludedCount,
+            excludedHolders: totalExcluded,
+            configExcluded: configExcludedCount,
+            botRestricted: botRestrictedCount,
             totalEligibleBalance: totalEligibleBalance.toString(),
             totalDistributed: totalDistributed.toString(),
           },
@@ -244,7 +269,7 @@ export async function calculateRewards(
     return {
       distribution: finalDistribution!,
       eligibleCount: recipients.length,
-      excludedCount,
+      excludedCount: totalExcluded,
       batchCount: batches.length,
     };
   } catch (error) {

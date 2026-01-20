@@ -22,6 +22,8 @@ const ERC20_ABI = [
   'function balanceOf(address account) external view returns (uint256)',
   'function decimals() external view returns (uint8)',
   'function symbol() external view returns (string)',
+  // AQUARI-specific: AntiBot check
+  'function isBotRestricted(address account) external view returns (bool)',
 ];
 
 let provider: ethers.JsonRpcProvider | null = null;

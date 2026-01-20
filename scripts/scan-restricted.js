@@ -19,7 +19,7 @@ const ABI = ['function isBotRestricted(address account) external view returns (b
 async function main() {
   // Parse args
   const args = process.argv.slice(2);
-  let rpcUrl = process.env.BASE_RPC_URL || 'http://localhost:8545';
+  let rpcUrl = process.env.RPC_URL || 'http://localhost:8545';
 
   const rpcIndex = args.indexOf('--rpc');
   if (rpcIndex !== -1 && args[rpcIndex + 1]) {

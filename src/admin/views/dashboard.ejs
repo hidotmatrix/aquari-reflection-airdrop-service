@@ -57,18 +57,34 @@
   </div>
 
   <% if (schedule && schedule.useFastCycles) { %>
-  <!-- Fork Mode Fast Cycle Config -->
+  <!-- Fork Mode Config -->
   <div class="mt-4 pt-4 border-t border-dark-600">
     <div class="flex flex-wrap gap-6 items-center justify-between">
       <div class="flex flex-wrap gap-6 items-center">
+        <% if (schedule.snapshotCron || schedule.calculateCron) { %>
+        <!-- Cron-based scheduling -->
         <div class="text-xs text-gray-500">
-          <span class="font-medium text-gray-400">Fast Cycle Timing:</span>
+          <span class="font-medium text-gray-400">Cron Schedule:</span>
+          <% if (schedule.snapshotCron) { %>
+          Snapshot <span class="text-cyan-400 font-mono"><%= schedule.snapshotCron %></span>
+          <% } %>
+          <% if (schedule.calculateCron) { %>
+          → Calculate <span class="text-emerald-400 font-mono"><%= schedule.calculateCron %></span>
+          <% } %>
+          → <span class="text-yellow-400">Manual Airdrop</span>
+        </div>
+        <% } else { %>
+        <!-- Interval-based scheduling -->
+        <div class="text-xs text-gray-500">
+          <span class="font-medium text-gray-400">Interval Schedule:</span>
           Snapshot interval <span class="text-cyan-400"><%= schedule.snapshotIntervalMinutes %> min</span> →
           Calculate after <span class="text-emerald-400"><%= schedule.calculateDelayMinutes %> min</span> →
-          Airdrop after <span class="text-yellow-400"><%= schedule.airdropDelayMinutes %> min</span>
-          <% if (schedule.autoApprove) { %><span class="text-purple-400">(auto)</span><% } %>
+          <span class="text-yellow-400">Manual Airdrop</span>
         </div>
-        <% if (scheduler && scheduler.nextAction && scheduler.nextAction !== 'none' && scheduler.nextAction !== 'stopped' && scheduler.nextAction !== 'waiting-for-trigger') { %>
+        <% } %>
+
+        <!-- Current status indicator -->
+        <% if (scheduler && scheduler.nextAction && !['none', 'stopped', 'waiting-for-trigger', 'waiting-for-snapshot-cron'].includes(scheduler.nextAction)) { %>
         <div class="flex items-center gap-2">
           <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
           <span class="text-xs text-gray-400">
@@ -84,6 +100,7 @@
       <!-- Workflow Control Buttons -->
       <div class="flex items-center gap-3">
         <% if (scheduler && scheduler.nextAction === 'waiting-for-trigger') { %>
+        <!-- Manual start button (interval mode) -->
         <div class="flex items-center gap-2 text-yellow-400 text-xs">
           <div class="w-2 h-2 bg-yellow-400 rounded-full"></div>
           <span>Waiting for manual start</span>
@@ -92,7 +109,26 @@
           class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
           🚀 Start Workflow
         </button>
+        <% } else if (scheduler && scheduler.nextAction === 'waiting-for-snapshot-cron') { %>
+        <!-- Waiting for cron -->
+        <div class="flex items-center gap-2 text-purple-400 text-xs">
+          <div class="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+          <span>📅 Snapshot cron: <span class="font-mono"><%= schedule.snapshotCron %></span></span>
+          <% if (scheduler.nextActionTime) { %>
+          <span class="text-gray-400">→ next at <span class="text-white"><%= new Date(scheduler.nextActionTime).toLocaleTimeString() %></span></span>
+          <% } %>
+        </div>
+        <% } else if (scheduler && scheduler.nextAction === 'waiting-for-calculate-cron') { %>
+        <!-- Waiting for calculate cron -->
+        <div class="flex items-center gap-2 text-emerald-400 text-xs">
+          <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+          <span>📅 Calculate cron: <span class="font-mono"><%= schedule.calculateCron %></span></span>
+          <% if (scheduler.nextActionTime) { %>
+          <span class="text-gray-400">→ next at <span class="text-white"><%= new Date(scheduler.nextActionTime).toLocaleTimeString() %></span></span>
+          <% } %>
+        </div>
         <% } else if (scheduler && scheduler.nextAction === 'starting-soon' && scheduler.nextActionTime) { %>
+        <!-- Countdown to start -->
         <div class="flex items-center gap-2 text-cyan-400 text-xs">
           <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
           <span>Starting in <span id="startCountdown" class="font-mono font-medium"></span></span>
@@ -113,6 +149,7 @@
           })();
         </script>
         <% } else if (scheduler && scheduler.currentCycle > 0) { %>
+        <!-- Cycle running -->
         <div class="text-xs text-gray-400">
           <span class="text-emerald-400 font-medium">Cycle #<%= scheduler.currentCycle %></span> running
         </div>

@@ -9,11 +9,18 @@ import { getCurrentWeekId, getTestCycleId } from '../utils/week';
 // Scheduler
 // ═══════════════════════════════════════════════════════════
 //
-// Fork Mode (Fast Cycles):
-//   Server Start → Snapshot START
-//   +10 min      → Snapshot END
-//   +5 min       → Calculate
-//   +5 min       → Airdrop (auto or manual)
+// Fork Mode - Two options:
+//
+//   Option A: Cron-based (set SNAPSHOT_CRON & CALCULATE_CRON)
+//     SNAPSHOT_CRON  → Snapshot (START + END back-to-back)
+//     CALCULATE_CRON → Calculate rewards
+//     Manual         → Airdrop (admin enters reward amount)
+//
+//   Option B: Interval-based (no cron set, use AUTO_START=true)
+//     Server Start → Snapshot START
+//     +10 min      → Snapshot END
+//     +5 min       → Calculate
+//     Manual       → Airdrop
 //
 // Production Mode (Weekly Cron):
 //   Sunday  23:59 UTC → Snapshot
@@ -103,10 +110,154 @@ function initializeFastCycleScheduler(db: Db): void {
   const config = getConfig();
   const schedule = config.SCHEDULE;
 
+  // Check if cron-based scheduling is configured
+  if (schedule.snapshotCron || schedule.calculateCron) {
+    initializeForkCronScheduler(db);
+    return;
+  }
+
+  // Otherwise use interval-based scheduling
+  initializeForkIntervalScheduler(db);
+}
+
+/**
+ * Fork Mode: Cron-based scheduling
+ * Uses SNAPSHOT_CRON and CALCULATE_CRON from env
+ */
+function initializeForkCronScheduler(db: Db): void {
+  const config = getConfig();
+  const schedule = config.SCHEDULE;
+
+  logger.info('Fork Mode: Cron-based Schedule');
+  logger.info(`  Snapshot: ${schedule.snapshotCron || 'NOT SET'}`);
+  logger.info(`  Calculate: ${schedule.calculateCron || 'NOT SET'}`);
+  logger.info(`  Airdrop: Manual (admin approval required)`);
+  logger.info('───────────────────────────────────────────────────────────');
+
+  // Snapshot cron job
+  if (schedule.snapshotCron) {
+    if (!cron.validate(schedule.snapshotCron)) {
+      logger.error(`❌ Invalid SNAPSHOT_CRON: "${schedule.snapshotCron}"`);
+      logger.error('   Cron format: "minute hour day month weekday"');
+      logger.error('   Examples: "30 14 * * *" (2:30 PM daily), "*/5 * * * *" (every 5 min)');
+      throw new Error(`Invalid SNAPSHOT_CRON expression: ${schedule.snapshotCron}`);
+    } else {
+      const snapshotTask = cron.schedule(schedule.snapshotCron, async () => {
+        schedulerState.currentCycle++;
+        const cycleId = getTestCycleId(schedulerState.currentCycle);
+
+        logger.info('');
+        logger.info(`${'═'.repeat(60)}`);
+        logger.info(`  CRON SNAPSHOT - CYCLE #${schedulerState.currentCycle} (${cycleId})`);
+        logger.info(`${'═'.repeat(60)}`);
+        logger.info('');
+
+        // Take START snapshot
+        logger.info(`[${cycleId}] Taking START snapshot...`);
+        schedulerState.nextAction = 'snapshot-start';
+        try {
+          await startJob(db, 'snapshot', `${cycleId}-start`);
+          schedulerState.lastSnapshot = new Date();
+          logger.info(`[${cycleId}] START snapshot complete`);
+        } catch (error) {
+          logger.error(`[${cycleId}] START snapshot failed:`, error);
+        }
+
+        // Take END snapshot (back-to-back for testing)
+        logger.info(`[${cycleId}] Taking END snapshot...`);
+        schedulerState.nextAction = 'snapshot-end';
+        try {
+          await startJob(db, 'snapshot', `${cycleId}-end`);
+          schedulerState.lastSnapshot = new Date();
+          logger.info(`[${cycleId}] END snapshot complete`);
+        } catch (error) {
+          logger.error(`[${cycleId}] END snapshot failed:`, error);
+        }
+
+        // Update state for next action
+        if (schedule.calculateCron) {
+          schedulerState.nextAction = 'waiting-for-calculate-cron';
+          schedulerState.nextActionTime = getNextCronTime(schedule.calculateCron);
+          logger.info(`[${cycleId}] Calculate will run at next cron: ${schedule.calculateCron}`);
+        } else {
+          schedulerState.nextAction = 'awaiting-manual-calculate';
+          schedulerState.nextActionTime = null;
+          logger.info(`[${cycleId}] No CALCULATE_CRON set - trigger manually from dashboard`);
+        }
+      });
+
+      scheduledTasks.push(snapshotTask);
+      logger.info(`✓ Snapshot cron scheduled: ${schedule.snapshotCron}`);
+    }
+  }
+
+  // Calculate cron job
+  if (schedule.calculateCron) {
+    if (!cron.validate(schedule.calculateCron)) {
+      logger.error(`❌ Invalid CALCULATE_CRON: "${schedule.calculateCron}"`);
+      logger.error('   Cron format: "minute hour day month weekday"');
+      logger.error('   Examples: "45 14 * * *" (2:45 PM daily), "*/10 * * * *" (every 10 min)');
+      throw new Error(`Invalid CALCULATE_CRON expression: ${schedule.calculateCron}`);
+    } else {
+      const calcTask = cron.schedule(schedule.calculateCron, async () => {
+        const cycleId = getTestCycleId(schedulerState.currentCycle);
+
+        logger.info('');
+        logger.info(`[${cycleId}] CRON CALCULATE - Running calculation...`);
+
+        schedulerState.nextAction = 'calculation';
+        try {
+          await startJob(db, 'calculation', cycleId);
+          schedulerState.lastCalculation = new Date();
+          logger.info(`[${cycleId}] Calculation complete`);
+        } catch (error) {
+          logger.error(`[${cycleId}] Calculation failed:`, error);
+        }
+
+        // Airdrop is always manual
+        schedulerState.nextAction = 'awaiting-approval';
+        schedulerState.nextActionTime = null;
+
+        logger.info('');
+        logger.info(`${'─'.repeat(60)}`);
+        logger.info(`[${cycleId}] READY FOR AIRDROP`);
+        logger.info(`  Visit: http://localhost:${config.PORT}/admin/distributions`);
+        logger.info(`  Enter reward amount and approve the airdrop`);
+        logger.info(`${'─'.repeat(60)}`);
+        logger.info('');
+      });
+
+      scheduledTasks.push(calcTask);
+      logger.info(`✓ Calculate cron scheduled: ${schedule.calculateCron}`);
+    }
+  }
+
+  // Set initial state
+  schedulerState.nextAction = 'waiting-for-snapshot-cron';
+  if (schedule.snapshotCron) {
+    schedulerState.nextActionTime = getNextCronTime(schedule.snapshotCron);
+  }
+
+  logger.info('');
+  logger.info('📅 Cron scheduler ready - waiting for scheduled times');
+  if (schedulerState.nextActionTime) {
+    logger.info(`   Next snapshot at: ${schedulerState.nextActionTime.toLocaleString()}`);
+  }
+  logger.info('');
+}
+
+/**
+ * Fork Mode: Interval-based scheduling (original behavior)
+ * Uses AUTO_START and setTimeout intervals
+ */
+function initializeForkIntervalScheduler(db: Db): void {
+  const config = getConfig();
+  const schedule = config.SCHEDULE;
+
   const totalCycleTime = schedule.snapshotIntervalMinutes + schedule.calculateDelayMinutes +
     (schedule.autoApprove ? schedule.airdropDelayMinutes : 0);
 
-  logger.info('Fast Cycle Schedule:');
+  logger.info('Fork Mode: Interval-based Schedule');
   logger.info(`  Auto-Start: ${schedule.autoStart ? 'YES' : 'NO (manual trigger required)'}`);
   if (schedule.startDelayMinutes > 0) {
     logger.info(`  Start Delay: ${schedule.startDelayMinutes} minutes`);
@@ -114,11 +265,7 @@ function initializeFastCycleScheduler(db: Db): void {
   logger.info(`  0:00  - Snapshot START`);
   logger.info(`  ${schedule.snapshotIntervalMinutes}:00 - Snapshot END`);
   logger.info(`  ${schedule.snapshotIntervalMinutes + schedule.calculateDelayMinutes}:00 - Calculate rewards`);
-  if (schedule.autoApprove) {
-    logger.info(`  ${totalCycleTime}:00 - Airdrop (auto)`);
-  } else {
-    logger.info(`  ??:?? - Airdrop (manual approval required)`);
-  }
+  logger.info(`  ??:?? - Airdrop (manual approval required)`);
   logger.info('───────────────────────────────────────────────────────────');
 
   // Check if auto-start is enabled
@@ -157,6 +304,47 @@ function initializeFastCycleScheduler(db: Db): void {
   // Start first cycle immediately
   schedulerState.currentCycle = 1;
   startFastCycle(db);
+}
+
+/**
+ * Get next run time for a cron expression (simple implementation)
+ * Handles common patterns: "M H * * *" (specific time daily)
+ */
+function getNextCronTime(cronExpr: string): Date | null {
+  try {
+    const parts = cronExpr.trim().split(/\s+/);
+    if (parts.length !== 5) return null;
+
+    const minute = parts[0];
+    const hour = parts[1];
+    const dayOfMonth = parts[2];
+    const month = parts[3];
+    const dayOfWeek = parts[4];
+
+    // Only handle simple daily patterns like "30 14 * * *"
+    if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*' && minute && hour) {
+      const targetMinute = parseInt(minute, 10);
+      const targetHour = parseInt(hour, 10);
+
+      if (isNaN(targetMinute) || isNaN(targetHour)) return null;
+
+      const now = new Date();
+      const next = new Date();
+      next.setHours(targetHour, targetMinute, 0, 0);
+
+      // If time already passed today, schedule for tomorrow
+      if (next <= now) {
+        next.setDate(next.getDate() + 1);
+      }
+
+      return next;
+    }
+
+    // For complex patterns, return null (dashboard shows cron expression)
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**

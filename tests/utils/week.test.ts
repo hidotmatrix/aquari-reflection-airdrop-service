@@ -8,6 +8,10 @@ import {
   isValidWeekId,
   getISOWeekNumber,
   getISOWeekYear,
+  getTestCycleId,
+  isTestCycleId,
+  parseTestCycleId,
+  getCurrentWeekId,
 } from '../../src/utils/week';
 
 // ═══════════════════════════════════════════════════════════
@@ -157,6 +161,71 @@ describe('Week Utilities', () => {
     it('should handle year boundary', () => {
       // Dec 31, 2024 is in ISO week 1 of 2025
       expect(getISOWeekYear(new Date('2024-12-31'))).toBe(2025);
+    });
+  });
+
+  describe('getCurrentWeekId', () => {
+    it('should return current week ID', () => {
+      const weekId = getCurrentWeekId();
+      expect(weekId).toMatch(/^\d{4}-W\d{2}$/);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // Test Cycle ID Functions
+  // ═══════════════════════════════════════════════════════════
+
+  describe('getTestCycleId', () => {
+    it('should return correct format TEST-XXX', () => {
+      expect(getTestCycleId(1)).toBe('TEST-001');
+      expect(getTestCycleId(10)).toBe('TEST-010');
+      expect(getTestCycleId(100)).toBe('TEST-100');
+      expect(getTestCycleId(999)).toBe('TEST-999');
+    });
+
+    it('should pad single digit numbers', () => {
+      expect(getTestCycleId(1)).toBe('TEST-001');
+      expect(getTestCycleId(5)).toBe('TEST-005');
+      expect(getTestCycleId(9)).toBe('TEST-009');
+    });
+
+    it('should pad double digit numbers', () => {
+      expect(getTestCycleId(10)).toBe('TEST-010');
+      expect(getTestCycleId(50)).toBe('TEST-050');
+      expect(getTestCycleId(99)).toBe('TEST-099');
+    });
+  });
+
+  describe('isTestCycleId', () => {
+    it('should return true for valid test cycle IDs', () => {
+      expect(isTestCycleId('TEST-001')).toBe(true);
+      expect(isTestCycleId('TEST-010')).toBe(true);
+      expect(isTestCycleId('TEST-100')).toBe(true);
+      expect(isTestCycleId('TEST-999')).toBe(true);
+    });
+
+    it('should return false for invalid test cycle IDs', () => {
+      expect(isTestCycleId('TEST-1')).toBe(false);
+      expect(isTestCycleId('TEST-01')).toBe(false);
+      expect(isTestCycleId('TEST-0001')).toBe(false);
+      expect(isTestCycleId('test-001')).toBe(false);
+      expect(isTestCycleId('2025-W04')).toBe(false);
+      expect(isTestCycleId('invalid')).toBe(false);
+    });
+  });
+
+  describe('parseTestCycleId', () => {
+    it('should parse valid test cycle IDs', () => {
+      expect(parseTestCycleId('TEST-001')).toBe(1);
+      expect(parseTestCycleId('TEST-010')).toBe(10);
+      expect(parseTestCycleId('TEST-100')).toBe(100);
+      expect(parseTestCycleId('TEST-999')).toBe(999);
+    });
+
+    it('should throw error for invalid format', () => {
+      expect(() => parseTestCycleId('TEST-1')).toThrow('Invalid test cycle ID format');
+      expect(() => parseTestCycleId('2025-W04')).toThrow('Invalid test cycle ID format');
+      expect(() => parseTestCycleId('invalid')).toThrow('Invalid test cycle ID format');
     });
   });
 });

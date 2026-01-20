@@ -1,17 +1,52 @@
 import 'dotenv/config';
+import { getPreset, CONTRACTS, TEST_PRIVATE_KEY, Mode, Preset } from './presets';
 
 // ═══════════════════════════════════════════════════════════
-// Environment Variable Validation
+// Environment Configuration
 // ═══════════════════════════════════════════════════════════
+//
+// MODE=fork       → Fast test cycles (~20 min) on Anvil
+// MODE=production → Weekly cron schedule on Base mainnet
+//
+// ═══════════════════════════════════════════════════════════
+
+interface NetworkConfig {
+  rpcUrl: string;
+  chainId: number;
+  chainName: string;
+  tokenAddress: string;
+  disperseAddress: string;
+  moralisChain: string;
+}
+
+interface ScheduleConfig {
+  useFastCycles: boolean;
+  autoStart: boolean;
+  startDelayMinutes: number;
+  snapshotIntervalMinutes: number;
+  calculateDelayMinutes: number;
+  airdropDelayMinutes: number;
+  autoApprove: boolean;
+}
 
 interface EnvConfig {
   // App
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
   LOG_LEVEL: string;
-  MOCK_MODE: boolean;
-  MOCK_SNAPSHOTS: boolean;  // Use fake holder data (for testing without Moralis API)
-  MOCK_TRANSACTIONS: boolean; // Don't send real transactions (safe for testing)
+
+  // Mode
+  MODE: Mode;
+
+  // Flags
+  MOCK_SNAPSHOTS: boolean;
+  MOCK_TRANSACTIONS: boolean;
+
+  // Schedule
+  SCHEDULE: ScheduleConfig;
+
+  // Network
+  NETWORK: NetworkConfig;
 
   // Database
   MONGODB_URI: string;
@@ -22,25 +57,25 @@ interface EnvConfig {
   ADMIN_PASSWORD: string;
   SESSION_SECRET: string;
 
-  // Moralis
+  // APIs
   MORALIS_API_KEY: string;
 
   // Blockchain
-  BASE_RPC_URL: string;
   PRIVATE_KEY: string;
-  DISPERSE_CONTRACT: string;
 
   // Token
-  AQUARI_ADDRESS: string;
   MIN_BALANCE: string;
-  REWARD_TOKEN: 'ETH' | 'USDC' | 'AQUARI';
+  REWARD_TOKEN: string;
 
   // Distribution
-  REWARD_POOL: string;
   BATCH_SIZE: number;
   MAX_GAS_PRICE: string;
   CONFIRMATIONS: number;
 }
+
+// ═══════════════════════════════════════════════════════════
+// Helper Functions
+// ═══════════════════════════════════════════════════════════
 
 function getEnvVar(key: string, required: boolean = true): string {
   const value = process.env[key];
@@ -54,9 +89,7 @@ function getEnvVarAsInt(key: string, defaultValue: number): number {
   const value = process.env[key];
   if (!value) return defaultValue;
   const parsed = parseInt(value, 10);
-  if (isNaN(parsed)) {
-    throw new Error(`Invalid integer for environment variable: ${key}`);
-  }
+  if (isNaN(parsed)) return defaultValue;
   return parsed;
 }
 
@@ -66,28 +99,71 @@ function getEnvVarAsBool(key: string, defaultValue: boolean): boolean {
   return value.toLowerCase() === 'true';
 }
 
+// ═══════════════════════════════════════════════════════════
+// Validate and Build Config
+// ═══════════════════════════════════════════════════════════
+
 export function validateEnv(): EnvConfig {
+  // Get mode from .env (defaults to 'fork' for safety)
+  const mode = (getEnvVar('MODE', false) || 'fork') as Mode;
+  if (!['fork', 'production'].includes(mode)) {
+    throw new Error('MODE must be fork or production');
+  }
+
+  // Get preset for this mode
+  const preset: Preset = getPreset(mode);
+
+  // Node environment
   const nodeEnv = getEnvVar('NODE_ENV', false) || 'development';
   if (!['development', 'production', 'test'].includes(nodeEnv)) {
     throw new Error('NODE_ENV must be development, production, or test');
   }
 
-  const rewardToken = getEnvVar('REWARD_TOKEN', false) || 'ETH';
-  if (!['ETH', 'USDC', 'AQUARI'].includes(rewardToken)) {
-    throw new Error('REWARD_TOKEN must be ETH, USDC, or AQUARI');
+  // Private key: Use from .env, or test key for fork mode
+  let privateKey = getEnvVar('PRIVATE_KEY', false);
+  if (!privateKey && mode === 'fork') {
+    privateKey = TEST_PRIVATE_KEY;
+    console.log('Using test private key for fork mode');
   }
+  if (!privateKey && mode === 'production') {
+    throw new Error('PRIVATE_KEY is required for production mode');
+  }
+
+  // Network config
+  const network: NetworkConfig = {
+    rpcUrl: getEnvVar('RPC_URL', false) || preset.rpcUrl,
+    chainId: CONTRACTS.CHAIN_ID,
+    chainName: CONTRACTS.CHAIN_NAME,
+    tokenAddress: CONTRACTS.AQUARI_TOKEN,
+    disperseAddress: CONTRACTS.DISPERSE,
+    moralisChain: CONTRACTS.MORALIS_CHAIN,
+  };
+
+  // Schedule config (can override timing from .env)
+  // AUTO_START: Whether to start the workflow automatically on server start (default: false for fork)
+  // START_DELAY_MINUTES: Minutes to wait before starting the first cycle (default: 0)
+  const schedule: ScheduleConfig = {
+    useFastCycles: preset.useFastCycles,
+    autoStart: getEnvVarAsBool('AUTO_START', false),
+    startDelayMinutes: getEnvVarAsInt('START_DELAY_MINUTES', 0),
+    snapshotIntervalMinutes: getEnvVarAsInt('SNAPSHOT_INTERVAL', preset.snapshotIntervalMinutes),
+    calculateDelayMinutes: getEnvVarAsInt('CALCULATE_DELAY', preset.calculateDelayMinutes),
+    airdropDelayMinutes: getEnvVarAsInt('AIRDROP_DELAY', preset.airdropDelayMinutes),
+    autoApprove: getEnvVarAsBool('AUTO_APPROVE', preset.autoApprove),
+  };
 
   return {
     NODE_ENV: nodeEnv as EnvConfig['NODE_ENV'],
     PORT: getEnvVarAsInt('PORT', 3000),
-    LOG_LEVEL: getEnvVar('LOG_LEVEL', false) || 'info',
-    MOCK_MODE: getEnvVarAsBool('MOCK_MODE', true),
-    // MOCK_SNAPSHOTS defaults to MOCK_MODE value if not set
-    MOCK_SNAPSHOTS: process.env.MOCK_SNAPSHOTS !== undefined
-      ? getEnvVarAsBool('MOCK_SNAPSHOTS', true)
-      : getEnvVarAsBool('MOCK_MODE', true),
-    // MOCK_TRANSACTIONS defaults to true (safe default - never send real tx accidentally)
-    MOCK_TRANSACTIONS: getEnvVarAsBool('MOCK_TRANSACTIONS', true),
+    LOG_LEVEL: getEnvVar('LOG_LEVEL', false) || 'debug',
+
+    MODE: mode,
+
+    MOCK_SNAPSHOTS: getEnvVarAsBool('MOCK_SNAPSHOTS', preset.mockSnapshots),
+    MOCK_TRANSACTIONS: getEnvVarAsBool('MOCK_TRANSACTIONS', preset.mockTransactions),
+
+    SCHEDULE: schedule,
+    NETWORK: network,
 
     MONGODB_URI: getEnvVar('MONGODB_URI'),
     REDIS_URL: getEnvVar('REDIS_URL', false) || 'redis://localhost:6379',
@@ -98,22 +174,21 @@ export function validateEnv(): EnvConfig {
 
     MORALIS_API_KEY: getEnvVar('MORALIS_API_KEY'),
 
-    BASE_RPC_URL: getEnvVar('BASE_RPC_URL', false) || 'https://mainnet.base.org',
-    PRIVATE_KEY: getEnvVar('PRIVATE_KEY', false),
-    DISPERSE_CONTRACT: getEnvVar('DISPERSE_CONTRACT', false) || '0xD152f549545093347A162Dce210e7293f1452150',
+    PRIVATE_KEY: privateKey,
 
-    AQUARI_ADDRESS: getEnvVar('AQUARI_ADDRESS', false) || '0x7F0E9971D3320521Fc88F863E173a4cddBB051bA',
-    MIN_BALANCE: getEnvVar('MIN_BALANCE', false) || '1000000000000000000000', // 1000 tokens
-    REWARD_TOKEN: rewardToken as EnvConfig['REWARD_TOKEN'],
+    MIN_BALANCE: getEnvVar('MIN_BALANCE', false) || preset.minBalance,
+    REWARD_TOKEN: 'AQUARI',
 
-    REWARD_POOL: getEnvVar('REWARD_POOL', false) || '1000000000000000000', // 1 ETH
-    BATCH_SIZE: getEnvVarAsInt('BATCH_SIZE', 100),
-    MAX_GAS_PRICE: getEnvVar('MAX_GAS_PRICE', false) || '50000000000', // 50 gwei
-    CONFIRMATIONS: getEnvVarAsInt('CONFIRMATIONS', 3),
+    BATCH_SIZE: getEnvVarAsInt('BATCH_SIZE', preset.batchSize),
+    MAX_GAS_PRICE: getEnvVar('MAX_GAS_PRICE', false) || preset.maxGasPrice,
+    CONFIRMATIONS: getEnvVarAsInt('CONFIRMATIONS', preset.confirmations),
   };
 }
 
-// Singleton config instance
+// ═══════════════════════════════════════════════════════════
+// Singleton Config
+// ═══════════════════════════════════════════════════════════
+
 let config: EnvConfig | null = null;
 
 export function getConfig(): EnvConfig {
@@ -123,7 +198,58 @@ export function getConfig(): EnvConfig {
   return config;
 }
 
-// For testing - reset config
 export function resetConfig(): void {
   config = null;
 }
+
+// ═══════════════════════════════════════════════════════════
+// Convenience Functions
+// ═══════════════════════════════════════════════════════════
+
+export function getActiveNetwork(): NetworkConfig {
+  return getConfig().NETWORK;
+}
+
+export function isForkMode(): boolean {
+  return getConfig().MODE === 'fork';
+}
+
+export function isProductionMode(): boolean {
+  return getConfig().MODE === 'production';
+}
+
+export function useFastCycles(): boolean {
+  return getConfig().SCHEDULE.useFastCycles;
+}
+
+export function getModeName(): string {
+  const cfg = getConfig();
+
+  if (cfg.MOCK_TRANSACTIONS) {
+    return cfg.MOCK_SNAPSHOTS ? 'MOCK (No API/TX)' : 'SIMULATED (Real API, Mock TX)';
+  }
+
+  if (cfg.MODE === 'fork') {
+    return 'FORK (Fast Cycles)';
+  }
+
+  return 'PRODUCTION (Weekly)';
+}
+
+export function getMoralisChain(): string {
+  return getActiveNetwork().moralisChain;
+}
+
+export function getTokenAddress(): string {
+  return getActiveNetwork().tokenAddress;
+}
+
+export function getDisperseAddress(): string {
+  return getActiveNetwork().disperseAddress;
+}
+
+export function getRpcUrl(): string {
+  return getActiveNetwork().rpcUrl;
+}
+
+export type { NetworkConfig, ScheduleConfig, EnvConfig };

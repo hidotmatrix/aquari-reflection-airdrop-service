@@ -8,6 +8,14 @@
 <div class="bg-dark-700 border border-dark-500 rounded-xl p-5 mb-8">
   <div class="flex flex-wrap gap-6 items-center justify-between">
     <div class="flex items-center gap-6">
+      <!-- Network -->
+      <div>
+        <span class="text-gray-500 text-xs uppercase block mb-1">Network</span>
+        <span class="text-lg font-mono <%= isForkMode ? 'text-yellow-400' : 'text-cyan-400' %>">
+          <%= network.name %>
+        </span>
+        <span class="text-gray-500 text-xs block">(Chain ID: <%= network.chainId %>)</span>
+      </div>
       <!-- Minimum Balance -->
       <div>
         <span class="text-gray-500 text-xs uppercase block mb-1">Min Balance</span>
@@ -21,9 +29,19 @@
     </div>
     <!-- Mode Indicators -->
     <div class="flex items-center gap-3">
-      <% if (mockSnapshots) { %>
+      <!-- Airdrop Mode -->
+      <% if (isForkMode) { %>
       <span class="px-3 py-1 text-xs font-medium rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-        MOCK SNAPSHOTS
+        FORK MODE
+      </span>
+      <% } else { %>
+      <span class="px-3 py-1 text-xs font-medium rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+        PRODUCTION
+      </span>
+      <% } %>
+      <% if (mockSnapshots) { %>
+      <span class="px-3 py-1 text-xs font-medium rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30">
+        MOCK DATA
       </span>
       <% } %>
       <% if (mockTransactions) { %>
@@ -31,12 +49,101 @@
         SIMULATED TX
       </span>
       <% } else { %>
-      <span class="px-3 py-1 text-xs font-medium rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
-        PRODUCTION TX
+      <span class="px-3 py-1 text-xs font-medium rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+        LIVE TX
       </span>
       <% } %>
     </div>
   </div>
+
+  <% if (schedule && schedule.useFastCycles) { %>
+  <!-- Fork Mode Fast Cycle Config -->
+  <div class="mt-4 pt-4 border-t border-dark-600">
+    <div class="flex flex-wrap gap-6 items-center justify-between">
+      <div class="flex flex-wrap gap-6 items-center">
+        <div class="text-xs text-gray-500">
+          <span class="font-medium text-gray-400">Fast Cycle Timing:</span>
+          Snapshot interval <span class="text-cyan-400"><%= schedule.snapshotIntervalMinutes %> min</span> →
+          Calculate after <span class="text-emerald-400"><%= schedule.calculateDelayMinutes %> min</span> →
+          Airdrop after <span class="text-yellow-400"><%= schedule.airdropDelayMinutes %> min</span>
+          <% if (schedule.autoApprove) { %><span class="text-purple-400">(auto)</span><% } %>
+        </div>
+        <% if (scheduler && scheduler.nextAction && scheduler.nextAction !== 'none' && scheduler.nextAction !== 'stopped' && scheduler.nextAction !== 'waiting-for-trigger') { %>
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
+          <span class="text-xs text-gray-400">
+            Next: <span class="text-cyan-400 font-medium"><%= scheduler.nextAction %></span>
+            <% if (scheduler.nextActionTime) { %>
+            at <span class="text-white"><%= new Date(scheduler.nextActionTime).toLocaleTimeString() %></span>
+            <% } %>
+          </span>
+        </div>
+        <% } %>
+      </div>
+
+      <!-- Workflow Control Buttons -->
+      <div class="flex items-center gap-3">
+        <% if (scheduler && scheduler.nextAction === 'waiting-for-trigger') { %>
+        <div class="flex items-center gap-2 text-yellow-400 text-xs">
+          <div class="w-2 h-2 bg-yellow-400 rounded-full"></div>
+          <span>Waiting for manual start</span>
+        </div>
+        <button onclick="startWorkflow()" id="btnStartWorkflow"
+          class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
+          🚀 Start Workflow
+        </button>
+        <% } else if (scheduler && scheduler.nextAction === 'starting-soon' && scheduler.nextActionTime) { %>
+        <div class="flex items-center gap-2 text-cyan-400 text-xs">
+          <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
+          <span>Starting in <span id="startCountdown" class="font-mono font-medium"></span></span>
+        </div>
+        <script>
+          (function() {
+            const targetTime = new Date('<%= scheduler.nextActionTime.toISOString() %>').getTime();
+            function updateCountdown() {
+              const now = Date.now();
+              const diff = Math.max(0, targetTime - now);
+              const minutes = Math.floor(diff / 60000);
+              const seconds = Math.floor((diff % 60000) / 1000);
+              document.getElementById('startCountdown').textContent = `${minutes}m ${seconds}s`;
+              if (diff > 0) setTimeout(updateCountdown, 1000);
+              else location.reload();
+            }
+            updateCountdown();
+          })();
+        </script>
+        <% } else if (scheduler && scheduler.currentCycle > 0) { %>
+        <div class="text-xs text-gray-400">
+          <span class="text-emerald-400 font-medium">Cycle #<%= scheduler.currentCycle %></span> running
+        </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+  <% } else if (!schedule || !schedule.useFastCycles) { %>
+  <!-- Production Mode Weekly Schedule -->
+  <div class="mt-4 pt-4 border-t border-dark-600">
+    <div class="flex flex-wrap gap-6 items-center">
+      <div class="text-xs text-gray-500">
+        <span class="font-medium text-gray-400">Weekly Schedule (UTC):</span>
+        Sunday 23:59 <span class="text-cyan-400">Snapshot</span> →
+        Monday 00:30 <span class="text-emerald-400">Calculate</span> →
+        <span class="text-yellow-400">Manual Airdrop</span>
+      </div>
+      <% if (scheduler && scheduler.nextAction && scheduler.nextAction !== 'none' && scheduler.nextAction !== 'stopped') { %>
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
+        <span class="text-xs text-gray-400">
+          Next: <span class="text-cyan-400 font-medium"><%= scheduler.nextAction %></span>
+          <% if (scheduler.nextActionTime) { %>
+          at <span class="text-white"><%= new Date(scheduler.nextActionTime).toISOString() %></span>
+          <% } %>
+        </span>
+      </div>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
 </div>
 
 <!-- Stats Cards -->
@@ -107,8 +214,8 @@
       </div>
     </div>
 
-    <!-- Dev Tools -->
-    <% if (typeof mockMode === 'undefined' || !mockMode || true) { %>
+    <!-- Dev Tools (visible in fork mode or development) -->
+    <% if (isForkMode) { %>
     <div class="mt-4 pt-4 border-t border-dark-600">
       <div class="flex flex-wrap gap-3 items-center">
         <span class="text-gray-500 text-xs uppercase">Dev Tools:</span>
@@ -119,6 +226,10 @@
         <button onclick="clearAllData()" id="btnClearAll"
           class="px-3 py-1.5 bg-dark-600 hover:bg-red-500/20 text-gray-400 hover:text-red-400 text-xs rounded border border-dark-500 hover:border-red-500/50 transition-colors disabled:opacity-50">
           Clear All Data
+        </button>
+        <button onclick="deleteDatabase()" id="btnDeleteDb"
+          class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded border border-red-500 transition-colors disabled:opacity-50">
+          🗑️ Delete Database
         </button>
       </div>
     </div>
@@ -140,7 +251,7 @@
   </div>
   <div class="p-5 space-y-3">
     <% readyDistributions.forEach(d => {
-      const hasRewardConfig = d.config?.rewardPool && BigInt(d.config.rewardPool) > 0n;
+      const hasRewardConfig = d.config?.rewardPool && /^\d+$/.test(d.config.rewardPool) && BigInt(d.config.rewardPool) > 0n;
       const distRewardPool = hasRewardConfig ? (BigInt(d.config.rewardPool) / BigInt(10**18)).toString() : '';
       const distRewardToken = d.config?.rewardToken || rewardToken;
     %>
@@ -788,6 +899,35 @@
   }
 
   // ═══════════════════════════════════════════════════════════
+  // Workflow Control
+  // ═══════════════════════════════════════════════════════════
+
+  async function startWorkflow() {
+    if (!confirm('Start the airdrop workflow now?')) return;
+    setLoading('btnStartWorkflow', true);
+
+    try {
+      const res = await fetch('/admin/workflow/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      console.log('Start workflow response:', data);
+
+      if (data.success) {
+        alert('Workflow started successfully!');
+        location.reload();
+      } else {
+        alert(data.error || 'Failed to start workflow');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setLoading('btnStartWorkflow', false);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // Dev Tools
   // ═══════════════════════════════════════════════════════════
 
@@ -839,6 +979,36 @@
     }
   }
 
+  async function deleteDatabase() {
+    if (!confirm('⚠️ DELETE ENTIRE DATABASE?\n\nThis will drop ALL collections including:\n- snapshots\n- holders\n- distributions\n- recipients\n- batches\n- jobs\n\nThis action CANNOT be undone!')) return;
+    if (!confirm('⚠️ FINAL WARNING ⚠️\n\nType "DELETE" in the next prompt to confirm database deletion.')) return;
+
+    const confirmation = prompt('Type DELETE to confirm database deletion:');
+    if (confirmation !== 'DELETE') {
+      alert('Database deletion cancelled.');
+      return;
+    }
+
+    setLoading('btnDeleteDb', true);
+    try {
+      const res = await fetch('/admin/dev/delete-database', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Database deleted successfully. All collections have been dropped.');
+        location.reload();
+      } else {
+        alert(data.error || 'Failed to delete database');
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      setLoading('btnDeleteDb', false);
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════
   // Airdrop Approval Modal
   // ═══════════════════════════════════════════════════════════
@@ -864,11 +1034,11 @@
 
     // Focus on input for quick entry
     document.getElementById('rewardAmount').focus();
-
-    // Add event listener for real-time calculation
-    document.getElementById('rewardAmount').addEventListener('input', updatePerHolderEstimate);
-    document.getElementById('rewardToken').addEventListener('change', updatePerHolderEstimate);
   }
+
+  // Register event listeners once (outside the function to prevent stacking)
+  document.getElementById('rewardAmount')?.addEventListener('input', updatePerHolderEstimate);
+  document.getElementById('rewardToken')?.addEventListener('change', updatePerHolderEstimate);
 
   function closeApprovalModal() {
     document.getElementById('approvalModal').classList.add('hidden');

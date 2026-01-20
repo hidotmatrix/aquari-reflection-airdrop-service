@@ -36,11 +36,15 @@ router.post('/trigger/full-flow', ctrl.triggerFullFlow);
 router.post('/trigger/airdrop', ctrl.triggerAirdrop);
 router.post('/approve-airdrop', ctrl.approveAndExecuteAirdrop);
 
+// Workflow control (manual start for fork mode)
+router.post('/workflow/start', ctrl.startWorkflow);
+
 // Job status and logs
 router.get('/jobs/status', ctrl.getJobStatusEndpoint);
 router.get('/jobs/:jobId/logs', ctrl.getJobLogs);
 
 // Dev tools (only works in development)
 router.post('/dev/clear-data', ctrl.clearData);
+router.post('/dev/delete-database', ctrl.deleteDatabase);
 
 export default router;

@@ -8,14 +8,14 @@
 
 1. [Overview](#overview)
 2. [How It Works](#how-it-works)
-3. [Production Timeline](#production-timeline)
-4. [Technical Architecture](#technical-architecture)
-5. [Current Progress](#current-progress)
-6. [What's Left To Build](#whats-left-to-build)
-7. [Configuration](#configuration)
-8. [Admin Dashboard](#admin-dashboard)
-9. [Database Schema](#database-schema)
-10. [API Endpoints](#api-endpoints)
+3. [Production Flow](#production-flow)
+4. [Test Mode](#test-mode)
+5. [Fork Testing (Recommended)](#fork-testing-recommended)
+6. [Technical Architecture](#technical-architecture)
+7. [Disperse Contract Limits](#disperse-contract-limits)
+8. [Configuration](#configuration)
+9. [Admin Dashboard](#admin-dashboard)
+10. [Database Schema](#database-schema)
 11. [Deployment Checklist](#deployment-checklist)
 
 ---
@@ -24,15 +24,16 @@
 
 ### What Is This?
 
-A system that automatically rewards loyal AQUARI token holders every week. Holders who maintain their tokens throughout the week receive a proportional share of the weekly reward pool (ETH).
+A **fully autonomous** system that automatically rewards loyal AQUARI token holders every week. Once configured, cron jobs handle everything - the admin dashboard is purely for **monitoring and manual approval** when needed.
 
 ### Key Features
 
-- **Weekly Snapshots**: Captures all token holder balances
+- **Autonomous Operation**: Cron jobs run snapshots, calculations, and airdrops automatically
 - **MIN Balance Method**: Uses minimum of (start, end) balance to prevent gaming
-- **Batch Airdrops**: Gas-efficient multi-send via Disperse contract
-- **Admin Approval**: Manual review before executing real transactions
-- **Full Audit Trail**: Every transaction tracked with txHash
+- **Batch Airdrops**: Gas-efficient multi-send via Disperse contract (500 recipients/tx)
+- **Real-time Monitoring**: Dashboard shows all job progress, status, and logs
+- **Configurable Modes**: Test mode (minutes) vs Production mode (weekly)
+- **Fork Testing**: Test with real mainnet data without spending real funds
 
 ### Token Information
 
@@ -43,6 +44,13 @@ A system that automatically rewards loyal AQUARI token holders every week. Holde
 | Chain | Base Mainnet (Chain ID: 8453) |
 | Decimals | 18 |
 | Holders | ~12,000 |
+
+### Disperse Contract
+
+| Network | Address | Max Recipients/TX |
+|---------|---------|-------------------|
+| Base Mainnet | `0xD152f549545093347A162Dce210e7293f1452150` | 500 |
+| Base Sepolia | `0xD152f549545093347A162Dce210e7293f1452150` | 500 |
 
 ---
 
@@ -94,344 +102,362 @@ A system that automatically rewards loyal AQUARI token holders every week. Holde
 
 ---
 
-## Production Timeline
+## Production Flow
 
-### Launch Week (Week 0)
-
-```
-DAY 1 - ANNOUNCEMENT
-├── Announce airdrop program to community
-├── "Hold AQUARI for the full week to earn ETH rewards!"
-├── Explain the MIN balance system
-└── Take FIRST SNAPSHOT (this becomes Week 1 START)
-
-NO AIRDROP THIS WEEK - Need 2 snapshots to compare
-```
-
-### First Airdrop (Week 1)
+### Data Sources
 
 ```
-SUNDAY 23:59 UTC
-├── Automatic: Take END snapshot
-└── Week 1 data complete (have START and END)
-
-MONDAY
-├── Automatic: Calculate eligible holders
-├── Admin: Review distribution details
-├── Admin: Enter reward pool amount (e.g., 0.5 ETH)
-├── Admin: Approve and execute airdrop
-└── Recipients receive ETH!
-
-This END snapshot → Next week's START snapshot
+┌─────────────────────────────────────────────────────────────────────┐
+│                    WHERE DATA COMES FROM                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   SNAPSHOTS (Holder Balances)                                      │
+│   ────────────────────────────                                     │
+│   Source: MORALIS API                                              │
+│   • Queries real Base mainnet blockchain                           │
+│   • Gets all AQUARI token holders + balances                       │
+│   • ~12,000 holders per snapshot                                   │
+│   • Always real data (cannot be faked)                             │
+│                                                                     │
+│   TRANSACTIONS (Airdrop Execution)                                 │
+│   ─────────────────────────────────                                │
+│   Source: RPC ENDPOINT                                             │
+│   • Fork Mode = Anvil (test without real funds)                    │
+│   • Production = Base Mainnet RPC                                  │
+│   • Uses Disperse contract for batch transfers                     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Ongoing (Week 2+)
+### Weekly Production Cycle
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     WEEKLY CYCLE                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   SUNDAY 23:59 UTC                                              │
-│   └── Take END snapshot (only 1 API call needed!)              │
-│                                                                 │
-│   MONDAY 00:30 UTC                                              │
-│   └── Calculate rewards automatically                          │
-│                                                                 │
-│   MONDAY (Admin Action)                                         │
-│   ├── Review eligible holders                                  │
-│   ├── Enter this week's reward pool                            │
-│   ├── Approve airdrop                                          │
-│   └── Monitor execution                                        │
-│                                                                 │
-│   Previous END snapshot = Next START snapshot                  │
-│   (Saves 50% of API calls!)                                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                    PRODUCTION WEEKLY FLOW                           │
+│                    (Fully Autonomous)                               │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   ══════════════════════════════════════════════════════════════   │
+│   WEEK 1 - BOOTSTRAP (First Time Only)                             │
+│   ══════════════════════════════════════════════════════════════   │
+│                                                                     │
+│   Sunday 23:59 UTC ──► CRON: Take Snapshot #1                      │
+│                        └─► Calls Moralis API                       │
+│                        └─► Saves all 12,000 holders                │
+│                        └─► Stored as reference                     │
+│                        └─► NO AIRDROP YET (nothing to compare)     │
+│                                                                     │
+│   ──────────────────────────────────────────────────────────────   │
+│                                                                     │
+│   ══════════════════════════════════════════════════════════════   │
+│   WEEK 2+ - REGULAR CYCLE (Repeats Forever)                        │
+│   ══════════════════════════════════════════════════════════════   │
+│                                                                     │
+│   SUNDAY 23:59 UTC                                                 │
+│   ┌────────────────────────────────────────────────────────────┐   │
+│   │  CRON JOB 1: SNAPSHOT                                      │   │
+│   │  ─────────────────────                                     │   │
+│   │  • Call Moralis API                                        │   │
+│   │  • Fetch all ~12,000 AQUARI holders                        │   │
+│   │  • Save to MongoDB (holders collection)                    │   │
+│   │  • This snapshot serves DUAL PURPOSE:                      │   │
+│   │      → END of current week (for calculation)               │   │
+│   │      → START of next week (for next cycle)                 │   │
+│   └────────────────────────────────────────────────────────────┘   │
+│                          │                                         │
+│                          ▼                                         │
+│   MONDAY 00:30 UTC                                                 │
+│   ┌────────────────────────────────────────────────────────────┐   │
+│   │  CRON JOB 2: CALCULATE                                     │   │
+│   │  ─────────────────────                                     │   │
+│   │  • Load previous snapshot (START)                          │   │
+│   │  • Load current snapshot (END)                             │   │
+│   │  • Compare all holders                                     │   │
+│   │  • Apply MIN(start, end) rule                              │   │
+│   │  • Filter: balance >= 1000 AQUARI                          │   │
+│   │  • Generate eligible recipients list                       │   │
+│   │  • Create batches (500 recipients each)                    │   │
+│   │  • Status → "ready" (awaiting approval)                    │   │
+│   └────────────────────────────────────────────────────────────┘   │
+│                          │                                         │
+│                          ▼                                         │
+│   MONDAY 01:00 UTC                                                 │
+│   ┌────────────────────────────────────────────────────────────┐   │
+│   │  CRON JOB 3: AIRDROP                                       │   │
+│   │  ─────────────────────                                     │   │
+│   │                                                            │   │
+│   │  IF auto-approve enabled:                                  │   │
+│   │    • Use default reward pool                               │   │
+│   │    • Execute all batches automatically                     │   │
+│   │                                                            │   │
+│   │  IF manual approval required:                              │   │
+│   │    • Wait for admin to:                                    │   │
+│   │      1. Set reward pool amount                             │   │
+│   │      2. Click "Approve & Execute"                          │   │
+│   │    • Then execute batches via Disperse contract            │   │
+│   │                                                            │   │
+│   │  EXECUTION:                                                │   │
+│   │  • Process batches sequentially (500 recipients each)      │   │
+│   │  • Call disperseTokenSimple() on Disperse contract         │   │
+│   │  • Record txHash for each batch                            │   │
+│   │  • Update recipient status to "completed"                  │   │
+│   └────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Snapshot Timeline Visual
+
+```
+Week 1          Week 2          Week 3          Week 4
+│               │               │               │
+▼               ▼               ▼               ▼
+┌───┐           ┌───┐           ┌───┐           ┌───┐
+│ A │           │ B │           │ C │           │ D │   ← Snapshots (via Moralis)
+└───┘           └───┘           └───┘           └───┘
+  │               │               │               │
+  │ (saved only)  │               │               │
+  │               │               │               │
+  └───────┬───────┘               │               │
+          │                       │               │
+     Compare A↔B            Compare B↔C      Compare C↔D
+     Airdrop #1             Airdrop #2       Airdrop #3
+
+Note: Each snapshot is used TWICE:
+  • As END of current week
+  • As START of next week
+  → Saves 50% API calls!
+```
+
+### Cron Schedule Summary
+
+| Job | Schedule | What It Does |
+|-----|----------|--------------|
+| Snapshot | Sunday 23:59 UTC | Fetch all holders from Moralis |
+| Calculate | Monday 00:30 UTC | Compare snapshots, create batches |
+| Airdrop | Monday 01:00 UTC | Execute batches (auto or manual) |
+
+---
+
+## Test Mode
+
+### Overview
+
+Test mode runs the **exact same cron job logic** but with **minute-based timing** instead of weekly. The UI is purely for monitoring - you don't trigger anything manually.
+
+### Test vs Production Comparison
+
+| Aspect | Test Mode | Production Mode |
+|--------|-----------|-----------------|
+| Network | Base Mainnet Fork (Anvil) | Base Mainnet |
+| Snapshot Source | Moralis API (real data!) | Moralis API |
+| Timing | Minutes (configurable) | Weekly cron |
+| Transactions | Fork (no real funds) | Real AQUARI tokens |
+| Week IDs | `TEST-001`, `TEST-002` | `2025-W04`, `2025-W05` |
+| Full Cycle | ~15 minutes | 1 week |
+
+### Test Mode Timeline
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    TEST MODE FLOW (~15 min cycle)                   │
+│                    Cron Jobs Do Everything!                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   CONFIG:                                                          │
+│   TEST_SNAPSHOT_INTERVAL=5   (minutes between snapshots)           │
+│   TEST_CALCULATE_DELAY=1     (minutes after END snapshot)          │
+│   TEST_AIRDROP_DELAY=1       (minutes after calculation)           │
+│   TEST_AUTO_APPROVE=true     (skip manual approval)                │
+│                                                                     │
+│   ──────────────────────────────────────────────────────────────   │
+│                                                                     │
+│   CYCLE 1:                                                         │
+│   ─────────                                                        │
+│   T+0:00  ──► Scheduler: Take START Snapshot (TEST-001-start)      │
+│               └─► Moralis API fetches real holder data             │
+│                                                                     │
+│   T+5:00  ──► Scheduler: Take END Snapshot (TEST-001-end)          │
+│               └─► Moralis API fetches updated balances             │
+│                                                                     │
+│   T+6:00  ──► Scheduler: Calculate Rewards                         │
+│               └─► Compare START vs END                             │
+│               └─► Create eligible list + batches                   │
+│                                                                     │
+│   T+7:00  ──► Scheduler: Execute Airdrop                           │
+│               └─► If AUTO_APPROVE: Execute immediately             │
+│               └─► If not: Wait for admin approval in UI            │
+│                                                                     │
+│   ──────────────────────────────────────────────────────────────   │
+│                                                                     │
+│   CYCLE 2 (starts automatically):                                  │
+│   ─────────                                                        │
+│   T+7:00  ──► TEST-001-end becomes TEST-002-start                  │
+│   T+12:00 ──► Take END Snapshot (TEST-002-end)                     │
+│   T+13:00 ──► Calculate                                            │
+│   T+14:00 ──► Airdrop                                              │
+│                                                                     │
+│   ... continues forever until stopped ...                          │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### What You See in Dashboard (Monitoring Only)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ADMIN DASHBOARD                                  │
+│                    (Read-Only Monitoring)                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │  MODE: TEST          NETWORK: Base Mainnet Fork             │  │
+│   │  Current Cycle: TEST-003                                    │  │
+│   │  Next Action: CALCULATE in 2:34                             │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │  ACTIVE JOBS                                                │  │
+│   │  ─────────────────────────────────────────────────────────  │  │
+│   │  [████████████████░░░░] 78% - Snapshot TEST-003-end         │  │
+│   │  Fetching holders... 9,234 / 12,000                         │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │  JOB LOGS (Real-time)                                       │  │
+│   │  ─────────────────────────────────────────────────────────  │  │
+│   │  [12:34:56] Starting snapshot for TEST-003-end              │  │
+│   │  [12:34:57] Fetching page 1 from Moralis...                 │  │
+│   │  [12:34:58] Got 100 holders, cursor: abc123...              │  │
+│   │  [12:34:59] Fetching page 2 from Moralis...                 │  │
+│   │  [12:35:01] Inserted batch of 100 holders                   │  │
+│   │  ...                                                        │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │  RECENT DISTRIBUTIONS                                       │  │
+│   │  ─────────────────────────────────────────────────────────  │  │
+│   │  TEST-002  │  completed  │  487 recipients  │  1000 AQUARI  │  │
+│   │  TEST-001  │  completed  │  512 recipients  │  1000 AQUARI  │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │  CONFIG                                                     │  │
+│   │  ─────────────────────────────────────────────────────────  │  │
+│   │  Snapshot Interval: 5 minutes                               │  │
+│   │  Calculate Delay: 1 minute                                  │  │
+│   │  Airdrop Delay: 1 minute                                    │  │
+│   │  Auto Approve: YES                                          │  │
+│   │  Default Reward Pool: 1,000 AQUARI                          │  │
+│   │  Batch Size: 500 recipients                                 │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Technical Architecture
+## Fork Testing (Recommended)
 
-### System Overview
+### Why Fork Testing?
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         SYSTEM ARCHITECTURE                                 │
-└─────────────────────────────────────────────────────────────────────────────┘
+Instead of deploying test tokens on Base Sepolia, fork Base mainnet directly:
 
-                              ┌─────────────┐
-                              │   ADMIN     │
-                              │  DASHBOARD  │
-                              └──────┬──────┘
-                                     │
-                              ┌──────▼──────┐
-                              │   EXPRESS   │
-                              │   SERVER    │
-                              └──────┬──────┘
-                                     │
-        ┌────────────────────────────┼────────────────────────────┐
-        │                            │                            │
-        ▼                            ▼                            ▼
-┌───────────────┐           ┌───────────────┐           ┌───────────────┐
-│   MORALIS     │           │   MONGODB     │           │     BASE      │
-│     API       │           │   DATABASE    │           │  BLOCKCHAIN   │
-├───────────────┤           ├───────────────┤           ├───────────────┤
-│ Token Holders │           │ • snapshots   │           │ • Disperse    │
-│ Balance Data  │           │ • holders     │           │   Contract    │
-│               │           │ • distribs    │           │ • ETH Transfer│
-│               │           │ • recipients  │           │               │
-│               │           │ • batches     │           │               │
-│               │           │ • jobs        │           │               │
-└───────────────┘           └───────────────┘           └───────────────┘
-```
+| Aspect | Testnet Approach | Fork Approach |
+|--------|------------------|---------------|
+| Token Contract | Deploy new test token | Real AQUARI contract |
+| Holder Data | Create fake holders | Real 12,000 holders |
+| Disperse Contract | Same address | Same address |
+| Setup Time | Hours | Minutes |
+| Realism | Low | **100% identical to prod** |
 
-### Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Runtime | Node.js 20+ |
-| Language | TypeScript |
-| Framework | Express.js |
-| Database | MongoDB |
-| Token API | Moralis |
-| Blockchain | ethers.js v6 |
-| Views | EJS + Tailwind CSS |
-| Auth | Session-based |
-
-### Project Structure
+### How It Works
 
 ```
-src/
-├── index.ts                    # App entry point
-│
-├── config/
-│   ├── env.ts                  # Environment validation
-│   └── database.ts             # MongoDB connection
-│
-├── models/
-│   ├── Snapshot.ts             # Snapshot metadata
-│   ├── Holder.ts               # Holder per snapshot
-│   ├── Distribution.ts         # Weekly distribution
-│   ├── Recipient.ts            # Eligible recipient
-│   ├── Batch.ts                # Transaction batch
-│   └── Job.ts                  # Background job
-│
-├── services/
-│   ├── moralis.service.ts      # Fetch token holders
-│   ├── snapshot.service.ts     # Snapshot operations
-│   ├── calculation.service.ts  # Reward calculations
-│   ├── job.runner.ts           # Job execution
-│   ├── job.service.ts          # Job management
-│   └── blockchain.service.ts   # [TODO] Real transactions
-│
-├── admin/
-│   ├── routes/
-│   │   └── admin.routes.ts     # All admin routes
-│   ├── controllers/
-│   │   └── admin.controller.ts # Route handlers
-│   ├── middleware/
-│   │   └── auth.middleware.ts  # Authentication
-│   └── views/                  # EJS templates
-│       ├── layout.ejs
-│       ├── dashboard.ejs
-│       ├── distributions.ejs
-│       ├── distribution-detail.ejs
-│       ├── snapshots.ejs
-│       ├── snapshot-detail.ejs
-│       ├── recipients.ejs
-│       ├── batches.ejs
-│       ├── search.ejs
-│       └── login.ejs
-│
-└── utils/
-    ├── week.ts                 # Week ID utilities
-    ├── format.ts               # Formatting helpers
-    ├── pagination.ts           # Pagination utilities
-    └── logger.ts               # Winston logger
+┌─────────────────────────────────────────────────────────────────────┐
+│                    FORK TESTING ARCHITECTURE                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   TERMINAL 1: Anvil (Fork of Base Mainnet)                         │
+│   ─────────────────────────────────────────                        │
+│   $ anvil --fork-url https://mainnet.base.org                      │
+│                                                                     │
+│   Output:                                                          │
+│   ├─ RPC: http://127.0.0.1:8545                                   │
+│   ├─ Chain ID: 8453 (same as mainnet!)                            │
+│   ├─ All mainnet contracts available                              │
+│   └─ 10 test accounts with 10,000 ETH each                        │
+│                                                                     │
+│   ──────────────────────────────────────────────────────────────   │
+│                                                                     │
+│   TERMINAL 2: Your App                                             │
+│   ────────────────────────                                         │
+│   $ npm run dev                                                    │
+│                                                                     │
+│   App uses:                                                        │
+│   ├─ Moralis API → Real holder data (always mainnet)              │
+│   ├─ RPC (Anvil) → Simulated transactions (no real funds)         │
+│   └─ Same contract addresses as production!                       │
+│                                                                     │
+│   ──────────────────────────────────────────────────────────────   │
+│                                                                     │
+│   SWITCHING TO PRODUCTION:                                         │
+│   Just change one line in .env:                                    │
+│                                                                     │
+│   # Fork testing:                                                  │
+│   RPC_URL=http://127.0.0.1:8545                                   │
+│                                                                     │
+│   # Production:                                                    │
+│   RPC_URL=https://mainnet.base.org                                │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Quick Start Commands
+
+```bash
+# Terminal 1: Start Anvil fork
+anvil --fork-url https://mainnet.base.org --block-time 2
+
+# Terminal 2: Start app
+AIRDROP_MODE=test RPC_URL=http://127.0.0.1:8545 npm run dev
+
+# Open dashboard
+open http://localhost:3000/admin
+
+# Watch the magic happen automatically!
 ```
 
 ---
 
-## Current Progress
+## Disperse Contract Limits
 
-### Completed Features ✅
+### Gas Calculations
 
-#### Core System
-- [x] MongoDB database with proper indexes
-- [x] Job queue system with progress tracking
-- [x] Real-time job logs in terminal UI
-- [x] Duplicate job prevention
+| Component | Value |
+|-----------|-------|
+| Base Block Gas Limit | 375,000,000 |
+| Gas per Token Recipient | ~65,000 |
+| Theoretical Max Recipients | ~5,700 |
+| **Recommended Batch Size** | **500** |
 
-#### Snapshots
-- [x] Moralis API integration (real API calls work)
-- [x] Mock snapshot mode for testing
-- [x] Paginated holder storage (handles 12k+ holders)
-- [x] Resume from cursor if interrupted
-- [x] Rate limit handling with backoff
+### Cost Per Batch (500 Recipients)
 
-#### Calculations
-- [x] MIN balance eligibility logic
-- [x] Proportional reward calculation
-- [x] Batch creation for gas efficiency
-- [x] Excluded address filtering
+| Fee Type | Amount |
+|----------|--------|
+| L2 Execution | ~$0.001 |
+| L1 Data Posting | ~$0.01 - $0.05 |
+| **Total per Batch** | **~$0.02 - $0.06** |
 
-#### Distribution Flow
-- [x] Week reference system (prev END = current START)
-- [x] Single snapshot per week (50% API savings)
-- [x] Admin approval modal with reward input
-- [x] Reward recalculation on approval
-- [x] Simulated transaction execution
+### Full Airdrop Cost (12,000 Holders)
 
-#### Admin Dashboard
-- [x] Secure login with session auth
-- [x] Dashboard with stats and mode indicators
-- [x] Real-time job progress terminal
-- [x] Distribution list with status
-- [x] Distribution detail with flow steps
-- [x] Recipient list with balances
-- [x] Batch status tracking
-- [x] Wallet search functionality
-- [x] Basescan links for addresses/txHash
+| Batch Size | # Batches | Total Cost |
+|------------|-----------|------------|
+| 100 | 120 | $2.40 - $7.20 |
+| **500** | **24** | **$0.50 - $1.50** |
+| 1000 | 12 | $0.25 - $0.75 |
 
-#### UI/UX
-- [x] TBD display for unconfigured reward pools
-- [x] Approval modal with per-holder estimate
-- [x] Mode indicators (MOCK/SIMULATED/PRODUCTION)
-- [x] Pagination on all list views
-
-### In Progress 🔄
-
-- [ ] Real blockchain transaction execution
-
-### Not Started ❌
-
-- [ ] Automated cron jobs
-- [ ] Wallet balance display
-- [ ] Low balance warnings
-- [ ] Email/webhook notifications
-- [ ] Production security hardening
-
----
-
-## What's Left To Build
-
-### 1. Blockchain Service (HIGH PRIORITY)
-
-**File:** `src/services/blockchain.service.ts`
-
-```typescript
-// Required functions:
-
-// Connect to Base RPC and load wallet
-async function initializeWallet(): Promise<Wallet>
-
-// Get wallet ETH balance
-async function getWalletBalance(): Promise<bigint>
-
-// Execute batch transfer via Disperse contract
-async function disperseEther(
-  recipients: string[],
-  amounts: bigint[]
-): Promise<{
-  txHash: string;
-  gasUsed: bigint;
-  blockNumber: number;
-}>
-
-// Estimate gas for a batch
-async function estimateGas(
-  recipients: string[],
-  amounts: bigint[]
-): Promise<bigint>
-```
-
-**Disperse Contract:** `0xD152f549545093347A162Dce210e7293f1452150`
-
-```solidity
-// Contract interface we need to call:
-function disperseEther(
-  address[] recipients,
-  uint256[] values
-) external payable
-```
-
-### 2. Update Airdrop Job
-
-**File:** `src/services/job.runner.ts`
-
-Replace simulated execution with real blockchain calls:
-
-```typescript
-// Current (simulated):
-const fakeTxHash = `0x${'sim'.repeat(4)}...`;
-
-// Production:
-const { txHash, gasUsed } = await disperseEther(
-  batch.recipients.map(r => r.address),
-  batch.recipients.map(r => BigInt(r.amount))
-);
-```
-
-### 3. Wallet Balance in Dashboard
-
-**Changes needed:**
-
-1. Add to `admin.controller.ts`:
-```typescript
-const walletBalance = await getWalletBalance();
-```
-
-2. Display in `dashboard.ejs`:
-```html
-<div>
-  <span>Airdropper Balance</span>
-  <span>1.5 ETH</span>
-</div>
-```
-
-3. Block approval if balance < reward pool
-
-### 4. Automated Cron Jobs
-
-**File:** `src/jobs/cron.ts`
-
-```typescript
-// Sunday 23:59 UTC - Take snapshot
-cron.schedule('59 23 * * 0', () => {
-  startJob(db, 'snapshot', `${getCurrentWeekId()}-end`);
-});
-
-// Monday 00:30 UTC - Calculate rewards
-cron.schedule('30 0 * * 1', () => {
-  startJob(db, 'calculation', getCurrentWeekId());
-});
-
-// Note: Airdrop execution remains MANUAL (admin approval required)
-```
-
-### 5. Notifications
-
-**Options:**
-- Discord webhook for job completion/failure
-- Email alerts for admin
-- Telegram bot notifications
-
-### 6. Security Hardening
-
-```typescript
-// Rate limiting
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
-
-// Helmet security headers
-app.use(helmet());
-
-// HTTPS redirect in production
-if (process.env.NODE_ENV === 'production') {
-  app.use(httpsRedirect);
-}
-```
+**Base is extremely cheap!** Full airdrop to 12,000 holders costs less than $2.
 
 ---
 
@@ -440,20 +466,38 @@ if (process.env.NODE_ENV === 'production') {
 ### Environment Variables
 
 ```bash
-# .env file
+# ═══════════════════════════════════════════════════════════
+# AIRDROP MODE
+# ═══════════════════════════════════════════════════════════
+AIRDROP_MODE=test                # test | production
 
 # ═══════════════════════════════════════════════════════════
-# APP
+# RPC CONFIGURATION
+# The ONLY thing you change between fork testing and production!
 # ═══════════════════════════════════════════════════════════
-NODE_ENV=development          # development | production
-PORT=3000
+RPC_URL=http://127.0.0.1:8545    # Fork: Anvil local
+# RPC_URL=https://mainnet.base.org  # Production: Base mainnet
 
 # ═══════════════════════════════════════════════════════════
-# MODE FLAGS
+# CONTRACT ADDRESSES (Same for fork AND production!)
 # ═══════════════════════════════════════════════════════════
-MOCK_MODE=true               # Legacy flag
-MOCK_SNAPSHOTS=true          # true = fake data, false = real Moralis
-MOCK_TRANSACTIONS=true       # true = simulate, false = real blockchain
+AQUARI_TOKEN=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
+DISPERSE_CONTRACT=0xD152f549545093347A162Dce210e7293f1452150
+
+# ═══════════════════════════════════════════════════════════
+# TEST MODE TIMING (only when AIRDROP_MODE=test)
+# ═══════════════════════════════════════════════════════════
+TEST_SNAPSHOT_INTERVAL=5         # Minutes between snapshots
+TEST_CALCULATE_DELAY=1           # Minutes after snapshot
+TEST_AIRDROP_DELAY=1             # Minutes after calculation
+TEST_AUTO_APPROVE=true           # Auto-approve airdrops
+TEST_REWARD_POOL=1000000000000000000000  # 1000 AQUARI
+
+# ═══════════════════════════════════════════════════════════
+# MOCK FLAGS (for development without APIs)
+# ═══════════════════════════════════════════════════════════
+MOCK_SNAPSHOTS=false             # true = fake holder data
+MOCK_TRANSACTIONS=false          # true = simulate transactions
 
 # ═══════════════════════════════════════════════════════════
 # DATABASE
@@ -468,234 +512,183 @@ ADMIN_PASSWORD=secure_password_here
 SESSION_SECRET=random_64_char_string
 
 # ═══════════════════════════════════════════════════════════
-# MORALIS API
+# MORALIS API (Always queries mainnet for real holder data)
 # ═══════════════════════════════════════════════════════════
 MORALIS_API_KEY=your_api_key
 
 # ═══════════════════════════════════════════════════════════
-# BLOCKCHAIN (Required when MOCK_TRANSACTIONS=false)
+# BLOCKCHAIN
 # ═══════════════════════════════════════════════════════════
-BASE_RPC_URL=https://mainnet.base.org
-PRIVATE_KEY=                  # Airdropper wallet private key
-DISPERSE_CONTRACT=0xD152f549545093347A162Dce210e7293f1452150
+PRIVATE_KEY=                     # Airdropper wallet private key
+BATCH_SIZE=500                   # Recipients per transaction
+MAX_GAS_PRICE=50000000000        # 50 gwei max
+CONFIRMATIONS=3                  # Blocks to wait
 
 # ═══════════════════════════════════════════════════════════
 # TOKEN CONFIG
 # ═══════════════════════════════════════════════════════════
-AQUARI_ADDRESS=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
-MIN_BALANCE=1000000000000000000000   # 1000 AQUARI in wei
-REWARD_TOKEN=ETH
-REWARD_POOL=1000000000000000000      # 1 ETH (used for preview calc only)
-
-# ═══════════════════════════════════════════════════════════
-# BATCH CONFIG
-# ═══════════════════════════════════════════════════════════
-BATCH_SIZE=100                # Recipients per transaction
-MAX_GAS_PRICE=50000000000     # 50 gwei
-CONFIRMATIONS=3               # Blocks to wait
+MIN_BALANCE=1000000000000000000000   # 1000 AQUARI minimum
+REWARD_TOKEN=AQUARI
 ```
 
-### Mode Configurations
+### Mode Matrix
 
-| Mode | MOCK_SNAPSHOTS | MOCK_TRANSACTIONS | Use Case |
-|------|----------------|-------------------|----------|
-| Full Mock | true | true | Local development |
-| Real Snapshots | false | true | Test with real data, no tx |
-| Production | false | false | Live airdrop execution |
+| Mode | AIRDROP_MODE | RPC_URL | MOCK_* | Use Case |
+|------|--------------|---------|--------|----------|
+| Full Mock | test | localhost | true | UI development |
+| Fork Test | test | Anvil | false | **Recommended testing** |
+| Production | production | mainnet.base.org | false | Live airdrops |
 
 ---
 
 ## Admin Dashboard
 
-### Pages
+### What Dashboard Shows (Monitoring)
+
+| Section | Information |
+|---------|-------------|
+| **Mode Banner** | TEST/PRODUCTION, Network, Chain ID |
+| **Scheduler Status** | Current cycle, next action, countdown |
+| **Active Jobs** | Progress bars, percentage, stage |
+| **Job Logs** | Real-time streaming logs |
+| **Distributions** | Status, recipients, amounts, txHash |
+| **Config** | Timing, batch size, auto-approve |
+
+### Manual Actions (When Needed)
+
+| Action | When Used |
+|--------|-----------|
+| Approve Airdrop | If `TEST_AUTO_APPROVE=false` |
+| Set Reward Pool | Before approving distribution |
+| Clear Data | Reset test data (dev only) |
+
+### Routes
 
 | Route | Description |
 |-------|-------------|
-| `/admin/login` | Login page |
-| `/admin/dashboard` | Main dashboard with stats |
-| `/admin/snapshots` | List all snapshots |
-| `/admin/snapshots/:id` | Snapshot detail with holders |
-| `/admin/distributions` | List all distributions |
-| `/admin/distributions/:id` | Distribution detail with recipients |
-| `/admin/recipients` | All recipients with filters |
-| `/admin/batches` | Batch status list |
-| `/admin/batches/:id` | Batch detail |
-| `/admin/search` | Search by wallet address |
-
-### Dashboard Features
-
-1. **Config Panel**: Shows MIN_BALANCE, reward token, mode indicators
-2. **Stats Cards**: Total snapshots, distributions, pending batches
-3. **Test Triggers**: Manual buttons for snapshot/calculate/full-flow
-4. **Ready for Airdrop**: Distributions awaiting approval with TBD amounts
-5. **Job Terminal**: Real-time progress with logs
-6. **Recent Jobs**: History with status and "View Logs" option
-7. **Recent Distributions**: Quick access to latest distributions
+| `/admin/dashboard` | Main monitoring view |
+| `/admin/distributions` | All distributions |
+| `/admin/distributions/:id` | Distribution detail + approve |
+| `/admin/snapshots` | All snapshots |
+| `/admin/recipients` | All recipients |
+| `/admin/batches` | Batch status + txHash |
+| `/admin/search` | Search by wallet |
 
 ---
 
 ## Database Schema
-
-### Collections
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        COLLECTIONS                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  snapshots          Snapshot metadata (not holders)             │
-│  ├── weekId         "2026-W03-start" or "2026-W03-end"         │
-│  ├── totalHolders   Count of holders                           │
-│  ├── totalBalance   Sum of all balances                        │
-│  ├── status         pending | in_progress | completed | failed │
-│  └── metadata       API call stats, duration                   │
+│  snapshots          Snapshot metadata                           │
+│  ├── weekId         "2025-W04" or "TEST-001-start"             │
+│  ├── totalHolders   12,000                                     │
+│  ├── status         pending | in_progress | completed          │
+│  └── completedAt    Timestamp                                  │
 │                                                                 │
-│  holders            One document per holder per snapshot        │
-│  ├── weekId         Links to snapshot                          │
-│  ├── snapshotId     ObjectId reference                         │
-│  ├── address        Wallet address (lowercase)                 │
-│  ├── balance        Raw balance in wei                         │
-│  └── balanceFormatted  Human readable                          │
+│  holders            One doc per holder per snapshot             │
+│  ├── snapshotId     Reference to snapshot                      │
+│  ├── address        0x... (lowercase)                          │
+│  ├── balance        Wei string                                 │
+│  └── balanceFormatted  "10,000 AQUARI"                        │
 │                                                                 │
 │  distributions      Weekly distribution record                  │
-│  ├── weekId         "2026-W03"                                 │
+│  ├── weekId         "2025-W04" or "TEST-001"                   │
 │  ├── status         calculating | ready | processing | done    │
-│  ├── config         { rewardPool, rewardToken, minBalance }    │
-│  └── stats          { eligible, excluded, totalBalance }       │
+│  ├── config         { rewardPool, batchSize }                  │
+│  └── stats          { eligible, excluded, total }              │
 │                                                                 │
-│  recipients         Eligible holders for a distribution         │
+│  recipients         Eligible holders                            │
 │  ├── distributionId Reference                                  │
-│  ├── address        Wallet address                             │
+│  ├── address        Wallet                                     │
 │  ├── balances       { start, end, min }                        │
-│  ├── reward         Calculated reward in wei                   │
-│  ├── status         pending | completed | failed               │
-│  └── txHash         Transaction hash when completed            │
+│  ├── reward         Amount in wei                              │
+│  └── txHash         When completed                             │
 │                                                                 │
-│  batches            Transaction batches                         │
-│  ├── distributionId Reference                                  │
+│  batches            Transaction batches (500 each)              │
 │  ├── batchNumber    1, 2, 3...                                 │
 │  ├── recipients     [{ address, amount }]                      │
-│  ├── status         pending | processing | completed | failed  │
-│  └── execution      { txHash, gasUsed, blockNumber }           │
+│  ├── status         pending | completed | failed               │
+│  └── execution      { txHash, gasUsed, block }                 │
 │                                                                 │
 │  jobs               Background job tracking                     │
-│  ├── type           snapshot | calculation | airdrop | full-flow│
-│  ├── weekId         Associated week                            │
-│  ├── status         pending | running | completed | failed     │
-│  ├── progress       { percentage, stage, current, total }      │
-│  └── logs           [{ timestamp, level, message }]            │
+│  ├── type           snapshot | calculation | airdrop           │
+│  ├── status         running | completed | failed               │
+│  ├── progress       { current, total, stage }                  │
+│  └── logs           [{ time, message }]                        │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## API Endpoints
-
-### Public
-- `GET /health` - Health check
-
-### Auth
-- `GET /admin/login` - Login page
-- `POST /admin/login` - Authenticate
-- `GET /admin/logout` - Logout
-
-### Dashboard
-- `GET /admin/dashboard` - Main dashboard
-
-### Snapshots
-- `GET /admin/snapshots` - List snapshots
-- `GET /admin/snapshots/:id` - Snapshot detail
-
-### Distributions
-- `GET /admin/distributions` - List distributions
-- `GET /admin/distributions/:id` - Distribution detail
-
-### Recipients & Batches
-- `GET /admin/recipients` - List recipients
-- `GET /admin/batches` - List batches
-- `GET /admin/batches/:id` - Batch detail
-
-### Search
-- `GET /admin/search?address=0x...` - Search wallet
-
-### Job Triggers
-- `POST /admin/trigger/snapshot` - Start snapshot job
-- `POST /admin/trigger/calculate` - Start calculation job
-- `POST /admin/trigger/full-flow` - Run full flow
-- `POST /admin/trigger/airdrop` - Start airdrop job
-- `POST /admin/approve-airdrop` - Approve with reward amount
-
-### Job Status
-- `GET /admin/jobs/status` - Get active/recent jobs
-- `GET /admin/jobs/:jobId/logs` - Get job logs
-
-### Dev Tools
-- `POST /admin/dev/clear-data` - Clear database (dev only)
-
----
-
 ## Deployment Checklist
 
-### Pre-Launch
-
-- [ ] Set `NODE_ENV=production`
-- [ ] Set `MOCK_SNAPSHOTS=false`
-- [ ] Set `MOCK_TRANSACTIONS=false`
-- [ ] Configure real `MONGODB_URI`
-- [ ] Set secure `ADMIN_PASSWORD`
-- [ ] Generate secure `SESSION_SECRET`
-- [ ] Add `MORALIS_API_KEY`
-- [ ] Add `PRIVATE_KEY` for airdropper wallet
-- [ ] Fund airdropper wallet with ETH
-- [ ] Test on Base testnet first
-- [ ] Set up database backups
-- [ ] Configure HTTPS
-
-### Launch Day
-
-- [ ] Take first snapshot (Week 1 START)
-- [ ] Announce to community
-- [ ] Verify snapshot data looks correct
-- [ ] Monitor for any errors
-
-### First Airdrop (Week 1 End)
-
-- [ ] Verify END snapshot completed
-- [ ] Review eligible holder count
-- [ ] Check recipient calculations
-- [ ] Enter reward pool amount
-- [ ] Approve airdrop
-- [ ] Monitor batch execution
-- [ ] Verify recipients received ETH
-- [ ] Announce completion to community
-
----
-
-## Development Commands
+### Fork Testing (Do First!)
 
 ```bash
-# Install dependencies
-npm install
+# 1. Install Foundry (for Anvil)
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
 
-# Run in development
+# 2. Start fork
+anvil --fork-url https://mainnet.base.org
+
+# 3. Configure .env
+AIRDROP_MODE=test
+RPC_URL=http://127.0.0.1:8545
+TEST_AUTO_APPROVE=true
+MOCK_SNAPSHOTS=false
+MOCK_TRANSACTIONS=false
+
+# 4. Start app
 npm run dev
 
-# Build for production
-npm run build
+# 5. Watch dashboard - cycles run automatically!
+```
 
-# Start production server
-npm start
+### Production Launch
+
+```
+□ Fork testing completed successfully
+□ All cycles ran without errors
+□ Transactions confirmed on fork
+
+□ Change RPC_URL to https://mainnet.base.org
+□ Set AIRDROP_MODE=production
+□ Set TEST_AUTO_APPROVE=false (require manual approval)
+□ Add real PRIVATE_KEY (wallet with AQUARI + ETH)
+□ Verify wallet has enough AQUARI for reward pool
+□ Verify wallet has ETH for gas (~0.01 ETH plenty)
+
+□ Take first snapshot (bootstrap)
+□ Wait for Week 2 snapshot
+□ Review calculation results
+□ Set reward pool amount
+□ Approve airdrop
+□ Monitor batch execution
+□ Verify recipients received tokens (Basescan)
 ```
 
 ---
 
-## Support
+## Summary
 
-- **Issues**: https://github.com/anthropics/claude-code/issues
-- **Basescan**: https://basescan.org
-- **AQUARI Token**: https://basescan.org/token/0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
+| What | How |
+|------|-----|
+| Snapshots | Moralis API (real mainnet data) |
+| Calculations | Automatic (cron job) |
+| Transactions | Disperse contract |
+| Testing | Anvil fork (recommended) |
+| Switching | Just change RPC_URL |
+| Cost | ~$1-2 for 12,000 holders |
+| Admin Role | Monitor + approve (optional) |
+
+**The system is fully autonomous.** Set it up, configure timing, and watch the dashboard!
 
 ---
 
-*Last Updated: January 2026*
+*Last Updated: January 2025*

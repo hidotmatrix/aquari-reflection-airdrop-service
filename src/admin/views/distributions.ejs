@@ -30,7 +30,7 @@
         </td>
         <td class="px-5 py-3 text-sm text-gray-300"><%= d.stats?.eligibleHolders?.toLocaleString() || 0 %></td>
         <td class="px-5 py-3 text-sm">
-          <% if (d.config?.rewardPool && BigInt(d.config.rewardPool) > 0n) { %>
+          <% if (d.config?.rewardPool && /^\d+$/.test(d.config.rewardPool) && BigInt(d.config.rewardPool) > 0n) { %>
           <span class="text-emerald-400 font-mono"><%= (BigInt(d.config.rewardPool) / BigInt(10**18)).toString() %> <%= d.config.rewardToken || 'ETH' %></span>
           <% } else { %>
           <span class="text-yellow-400">TBD</span>

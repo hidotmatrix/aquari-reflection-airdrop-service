@@ -1,5 +1,5 @@
 import { Db, ObjectId } from 'mongodb';
-import { getConfig } from '../config/env';
+import { getConfig, getTokenAddress } from '../config/env';
 import { logger } from '../utils/logger';
 import { getWeekId } from '../utils/week';
 import {
@@ -134,8 +134,9 @@ export async function takeSnapshot(
     if (useMockData) {
       // Mock mode - generate fake data
       logger.info('[MOCK] Using mock holder data');
+      const tokenAddress = getTokenAddress();
       const { holders: mockHolders, apiCallCount: mockCalls } = await fetchMockHolders(
-        config.AQUARI_ADDRESS,
+        tokenAddress,
         500,
         onProgress
       );
@@ -152,7 +153,8 @@ export async function takeSnapshot(
       apiCallCount = mockCalls;
     } else {
       // Real mode - fetch from Moralis with incremental saving
-      logger.info(`Fetching real holder data from Moralis for ${config.AQUARI_ADDRESS}`);
+      const tokenAddress = getTokenAddress();
+      logger.info(`Fetching real holder data from Moralis for ${tokenAddress}`);
 
       let cursor = resumeCursor || '';
       let consecutiveErrors = 0;
@@ -163,7 +165,7 @@ export async function takeSnapshot(
 
       do {
         try {
-          const result = await fetchHoldersPage(config.AQUARI_ADDRESS, cursor || undefined);
+          const result = await fetchHoldersPage(tokenAddress, cursor || undefined);
           apiCallCount++;
           consecutiveErrors = 0;
 

@@ -68,7 +68,7 @@
         <td class="px-5 py-3">
           <a href="/admin/search?address=<%= r.address %>" class="font-mono text-sm text-cyan-400 hover:text-cyan-300"><%= r.address %></a>
         </td>
-        <td class="px-5 py-3 text-sm text-emerald-400 font-medium"><%= (BigInt(r.amount) / BigInt(10**18)).toString() %> ETH</td>
+        <td class="px-5 py-3 text-sm text-emerald-400 font-medium"><%= r.amount && /^\d+$/.test(r.amount) ? (BigInt(r.amount) / BigInt(10**18)).toString() : '0' %> <%= rewardToken %></td>
       </tr>
       <% }) %>
       <% if (batch.recipients.length === 0) { %>

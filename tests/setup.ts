@@ -18,7 +18,17 @@ process.env.ADMIN_USERNAME = 'test_admin';
 process.env.ADMIN_PASSWORD = 'test_password';
 process.env.SESSION_SECRET = 'test_session_secret_for_testing_only';
 process.env.MORALIS_API_KEY = 'test_moralis_api_key';
-process.env.MOCK_MODE = 'true';
+
+// Mode config
+process.env.MODE = 'fork';
+process.env.MOCK_SNAPSHOTS = 'true';
+process.env.MOCK_TRANSACTIONS = 'true';
+
+// Token/batch config
+process.env.MIN_BALANCE = '1000000000000000000000';
+process.env.BATCH_SIZE = '100';
+process.env.MAX_GAS_PRICE = '50000000000';
+process.env.CONFIRMATIONS = '1';
 
 beforeAll(async () => {
   // Start in-memory MongoDB

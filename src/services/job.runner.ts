@@ -1,5 +1,5 @@
 import { Db, ObjectId } from 'mongodb';
-import { getConfig } from '../config/env';
+import { getConfig, getTokenAddress } from '../config/env';
 import { logger } from '../utils/logger';
 import { Job, JobType } from '../models/Job';
 import { Snapshot, Holder, fromMoralisResponse } from '../models';
@@ -11,6 +11,12 @@ import {
 } from './job.service';
 import { fetchHoldersPage, fetchMockHolders } from './moralis.service';
 import { calculateRewards } from './calculation.service';
+import {
+  executeBatchAirdrop,
+  isBlockchainReady,
+  getWalletTokenBalance,
+  initializeBlockchain,
+} from './blockchain.service';
 
 // ═══════════════════════════════════════════════════════════
 // Job Runner - Executes jobs with progress tracking
@@ -187,8 +193,9 @@ async function runSnapshotJob(ctx: JobContext, weekId: string): Promise<void> {
 
     if (config.MOCK_SNAPSHOTS) {
       await ctx.log(`[MOCK MODE] Generating mock holder data`);
+      const tokenAddress = getTokenAddress();
       const { holders: mockHolders, apiCallCount: mockCalls } = await fetchMockHolders(
-        config.AQUARI_ADDRESS,
+        tokenAddress,
         500
       );
 
@@ -209,6 +216,7 @@ async function runSnapshotJob(ctx: JobContext, weekId: string): Promise<void> {
       await ctx.log(`Fetching real holders from Moralis API`);
       await ctx.setProgress(existingCount, 10000, 'Fetching holders...');
 
+      const tokenAddress = getTokenAddress();
       let cursor = resumeCursor || '';
       let consecutiveErrors = 0;
       const MAX_ERRORS = 5;
@@ -217,7 +225,7 @@ async function runSnapshotJob(ctx: JobContext, weekId: string): Promise<void> {
 
       do {
         try {
-          const result = await fetchHoldersPage(config.AQUARI_ADDRESS, cursor || undefined);
+          const result = await fetchHoldersPage(tokenAddress, cursor || undefined);
           apiCallCount++;
           consecutiveErrors = 0;
 
@@ -527,24 +535,70 @@ async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
         successfulBatches++;
 
       } else {
-        // Production mode - execute real transactions
-        // This would integrate with ethers.js and the Disperse contract
-        await ctx.warn(`Production mode not yet implemented - batch ${batch.batchNumber} skipped`);
+        // Production mode - execute real transactions via Disperse contract
+        if (!isBlockchainReady()) {
+          initializeBlockchain();
+          if (!isBlockchainReady()) {
+            throw new Error('Blockchain not initialized - check PRIVATE_KEY and token configuration');
+          }
+        }
 
-        // For now, mark as failed in production mode
+        // Check token balance before executing
+        const tokenBalance = BigInt(await getWalletTokenBalance());
+        const batchTotal = BigInt(batch.totalAmount);
+        if (tokenBalance < batchTotal) {
+          throw new Error(`Insufficient token balance: ${tokenBalance} < ${batchTotal}`);
+        }
+
+        await ctx.log(`Executing real transaction for batch ${batch.batchNumber}...`);
+
+        // Execute the batch via Disperse contract
+        const execution = await executeBatchAirdrop(batch.recipients);
+
+        // Update batch with execution details
         await db.collection<Batch>('batches').updateOne(
           { _id: batch._id },
           {
             $set: {
-              status: 'failed',
-              lastError: 'Production transaction execution not implemented',
+              status: 'completed',
+              execution: {
+                txHash: execution.txHash,
+                gasUsed: execution.gasUsed,
+                gasPrice: execution.gasPrice,
+                blockNumber: execution.blockNumber,
+                confirmedAt: execution.confirmedAt,
+              },
               updatedAt: new Date(),
+              completedAt: new Date(),
             },
-            $inc: { retryCount: 1 },
           }
         );
 
-        failedBatches++;
+        // Update recipients with real txHash
+        const recipientAddresses = (batch.recipients || []).map(r => r.address);
+        if (recipientAddresses.length > 0) {
+          await db.collection<Recipient>('recipients').updateMany(
+            { distributionId: distribution._id, address: { $in: recipientAddresses } },
+            {
+              $set: {
+                status: 'completed',
+                txHash: execution.txHash,
+                updatedAt: new Date(),
+                completedAt: new Date(),
+              },
+            }
+          );
+        }
+
+        totalSent += batchTotal;
+
+        await ctx.log(`Batch ${batch.batchNumber} completed`, {
+          txHash: execution.txHash,
+          gasUsed: execution.gasUsed,
+          recipients: batch.recipientCount,
+        });
+
+        successfulBatches++;
       }
 
       processedBatches++;

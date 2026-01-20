@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Db, ObjectId } from 'mongodb';
-import { getConfig } from '../../config/env';
+import { getConfig, getActiveNetwork, getModeName, isForkMode, getTokenAddress } from '../../config/env';
 import { getPagination, LIMITS, buildPaginationMeta } from '../../utils/pagination';
 import { isValidAddress } from '../../utils/format';
 import { getCurrentWeekId } from '../../utils/week';
@@ -14,6 +14,7 @@ import {
 } from '../../models';
 import { startJob } from '../../services/job.runner';
 import { getJobById, getActiveJobs as getActiveJobsFromDb, getRecentJobs } from '../../services/job.service';
+import { getSchedulerState, manualStartWorkflow } from '../../jobs/scheduler';
 
 // ═══════════════════════════════════════════════════════════
 // LOGIN / LOGOUT
@@ -101,6 +102,10 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
   // Format MIN_BALANCE for display (convert from wei to tokens)
   const minBalanceTokens = BigInt(config.MIN_BALANCE) / BigInt(10 ** 18);
 
+  // Get network and scheduler info
+  const network = getActiveNetwork();
+  const schedulerState = getSchedulerState();
+
   res.render('dashboard', {
     latestDistribution,
     totalSnapshots,
@@ -109,13 +114,25 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
     recentDistributions,
     readyDistributions,
     availableWeeks: uniqueWeeks,
-    mockMode: config.MOCK_MODE,
     mockSnapshots: config.MOCK_SNAPSHOTS,
     mockTransactions: config.MOCK_TRANSACTIONS,
     minBalance: minBalanceTokens.toString(),
-    rewardPool: (BigInt(config.REWARD_POOL) / BigInt(10 ** 18)).toString(),
     rewardToken: config.REWARD_TOKEN,
-    aquariAddress: config.AQUARI_ADDRESS,
+    mode: config.MODE,
+    modeName: getModeName(),
+    isForkMode: isForkMode(),
+    network: {
+      name: network.chainName,
+      chainId: network.chainId,
+      tokenAddress: network.tokenAddress,
+    },
+    scheduler: {
+      isRunning: schedulerState.isRunning,
+      currentCycle: schedulerState.currentCycle,
+      nextAction: schedulerState.nextAction,
+      nextActionTime: schedulerState.nextActionTime,
+    },
+    schedule: config.SCHEDULE,
   });
 }
 
@@ -274,7 +291,7 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
     batches,
     recipients,
     currentStep,
-    aquariAddress: config.AQUARI_ADDRESS,
+    aquariAddress: getTokenAddress(),
     mockTransactions: config.MOCK_TRANSACTIONS,
     pagination: buildPaginationMeta(totalRecipients, { page, limit, skip }),
   });
@@ -346,6 +363,7 @@ export async function listBatches(req: Request, res: Response): Promise<void> {
 
 export async function batchDetail(req: Request, res: Response): Promise<void> {
   const db: Db = req.app.locals.db;
+  const config = getConfig();
   const { id } = req.params;
   const { page, limit, skip } = getPagination(req, LIMITS.RECIPIENTS);
 
@@ -364,6 +382,13 @@ export async function batchDetail(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // Get the distribution to fetch the reward token
+  const distribution = batch.distributionId
+    ? await db.collection<Distribution>('distributions').findOne({ _id: batch.distributionId })
+    : null;
+
+  const rewardToken = distribution?.config?.rewardToken || config.REWARD_TOKEN;
+
   const totalRecipients = batch.recipients?.length ?? 0;
   const paginatedRecipients = batch.recipients?.slice(skip, skip + limit) ?? [];
 
@@ -372,6 +397,7 @@ export async function batchDetail(req: Request, res: Response): Promise<void> {
       ...batch,
       recipients: paginatedRecipients,
     },
+    rewardToken,
     pagination: buildPaginationMeta(totalRecipients, { page, limit, skip }),
   });
 }
@@ -394,7 +420,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
       pagination: null,
       tab,
       error: null,
-      aquariAddress: config.AQUARI_ADDRESS,
+      aquariAddress: getTokenAddress(),
     });
     return;
   }
@@ -406,7 +432,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
       pagination: null,
       tab,
       error: 'Invalid address format',
-      aquariAddress: config.AQUARI_ADDRESS,
+      aquariAddress: getTokenAddress(),
     });
     return;
   }
@@ -422,7 +448,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
         .sort({ weekId: -1 })
         .skip(skip)
         .limit(limit)
-        .project({ weekId: 1, balance: 1, balanceFormatted: 1, snapshotAt: 1, createdAt: 1 })
+        .project({ weekId: 1, balance: 1, balanceFormatted: 1, createdAt: 1 })
         .toArray(),
       db.collection('holders').countDocuments({ address }),
     ]);
@@ -445,7 +471,7 @@ export async function searchByAddress(req: Request, res: Response): Promise<void
     tab,
     pagination: buildPaginationMeta(total, { page, limit, skip }),
     error: null,
-    aquariAddress: config.AQUARI_ADDRESS,
+    aquariAddress: getTokenAddress(),
   });
 }
 
@@ -487,6 +513,41 @@ export async function clearData(req: Request, res: Response): Promise<void> {
       success: true,
       message: weekId ? `Cleared data for week ${weekId}` : 'Cleared all data',
       deleted: results,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+export async function deleteDatabase(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const config = getConfig();
+
+  // Only allow in development/fork mode
+  if (config.NODE_ENV === 'production' && config.MODE !== 'fork') {
+    res.status(403).json({ success: false, error: 'Not allowed in production mode' });
+    return;
+  }
+
+  try {
+    const collections = ['snapshots', 'holders', 'distributions', 'recipients', 'batches', 'jobs'];
+    const results: Record<string, string> = {};
+
+    for (const collName of collections) {
+      try {
+        await db.collection(collName).drop();
+        results[collName] = 'dropped';
+      } catch (err) {
+        // Collection may not exist
+        results[collName] = 'not found or already dropped';
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Database collections dropped successfully',
+      dropped: results,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -862,6 +923,35 @@ export async function getJobLogs(req: Request, res: Response): Promise<void> {
       },
       logs: job.logs,
     });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// WORKFLOW CONTROL (Manual start for fork mode)
+// ═══════════════════════════════════════════════════════════
+
+export async function startWorkflow(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+
+  try {
+    const result = manualStartWorkflow(db);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message,
+        scheduler: getSchedulerState(),
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.message,
+        scheduler: getSchedulerState(),
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ success: false, error: message });

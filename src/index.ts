@@ -3,7 +3,8 @@ import express from 'express';
 import session from 'express-session';
 import expressLayouts from 'express-ejs-layouts';
 import path from 'path';
-import { getConfig } from './config/env';
+import { ethers } from 'ethers';
+import { getConfig, getModeName } from './config/env';
 import { connectDatabase, createIndexes, closeDatabase, getDatabaseStatus, checkDatabaseHealth } from './config/database';
 import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired } from './config/redis';
 import { initializeJobs, stopAllJobs, startWorker, stopWorker } from './jobs';
@@ -26,7 +27,21 @@ async function main(): Promise<void> {
     logger.info('  AQUARI Weekly Airdrop System');
     logger.info('═══════════════════════════════════════════════════════════');
     logger.info(`Environment: ${config.NODE_ENV}`);
-    logger.info(`Mock Mode: ${config.MOCK_MODE}`);
+    logger.info(`Mode: ${config.MODE} (${getModeName()})`);
+    logger.info('───────────────────────────────────────────────────────────');
+    logger.info(`Network: ${config.NETWORK.chainName} (Chain ID: ${config.NETWORK.chainId})`);
+    logger.info(`RPC URL: ${config.NETWORK.rpcUrl}`);
+    logger.info(`Token: ${config.REWARD_TOKEN} (${config.NETWORK.tokenAddress})`);
+    logger.info(`Disperse: ${config.NETWORK.disperseAddress}`);
+
+    // Derive and display wallet address from private key
+    const wallet = new ethers.Wallet(config.PRIVATE_KEY);
+    logger.info(`Airdrop Wallet: ${wallet.address}`);
+    logger.info('───────────────────────────────────────────────────────────');
+    logger.info(`Mock Snapshots: ${config.MOCK_SNAPSHOTS}`);
+    logger.info(`Mock Transactions: ${config.MOCK_TRANSACTIONS}`);
+    logger.info(`Batch Size: ${config.BATCH_SIZE}`);
+    logger.info(`Min Balance: ${config.MIN_BALANCE} wei`);
     logger.info(`Port: ${config.PORT}`);
 
     // Connect to MongoDB
@@ -97,7 +112,8 @@ async function main(): Promise<void> {
 
     // Add mockMode to all views
     app.use((_req, res, next) => {
-      res.locals.mockMode = config.MOCK_MODE;
+      res.locals.mockMode = config.MOCK_TRANSACTIONS;
+      res.locals.mockSnapshots = config.MOCK_SNAPSHOTS;
       next();
     });
 
@@ -119,7 +135,9 @@ async function main(): Promise<void> {
         timestamp: new Date().toISOString(),
         version: '1.0.0',
         environment: config.NODE_ENV,
-        mockMode: config.MOCK_MODE,
+        mode: config.MODE,
+        mockSnapshots: config.MOCK_SNAPSHOTS,
+        mockTransactions: config.MOCK_TRANSACTIONS,
         services: {
           database: {
             ...dbStatus,

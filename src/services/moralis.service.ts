@@ -1,13 +1,29 @@
-import { getConfig } from '../config/env';
+import { getConfig, getMoralisChain, getActiveNetwork } from '../config/env';
 import { logger } from '../utils/logger';
 import { MoralisHolderResponse } from '../models/Holder';
 
 // ═══════════════════════════════════════════════════════════
 // Moralis API Service
+// Supports both Base Mainnet and Base Sepolia testnet
 // ═══════════════════════════════════════════════════════════
 
 const BASE_URL = 'https://deep-index.moralis.io/api/v2.2';
-const CHAIN = 'base';
+
+// Rate limiting configuration
+// Moralis free tier: 40,000 CU/day, ~25 req/sec burst
+// Using conservative limits to avoid 429 errors
+const RATE_LIMIT_DELAY_MS = 1000; // 1 second between requests (conservative)
+const RATE_LIMIT_BACKOFF_BASE_MS = 3000; // Start with 3 seconds on first rate limit
+const RATE_LIMIT_BACKOFF_MAX_MS = 60000; // Max 60 second backoff
+
+/**
+ * Get the Moralis chain identifier based on current AIRDROP_MODE
+ * - Production: 'base' (Base Mainnet)
+ * - Test: '0x14a34' (Base Sepolia - hex chain ID)
+ */
+function getChain(): string {
+  return getMoralisChain();
+}
 
 export interface MoralisApiResponse {
   page: string;
@@ -42,7 +58,7 @@ export async function fetchTokenStats(tokenAddress: string): Promise<TokenStats>
 
   // Fetch just the first page to get metadata
   const url = new URL(`${BASE_URL}/erc20/${tokenAddress}/owners`);
-  url.searchParams.set('chain', CHAIN);
+  url.searchParams.set('chain', getChain());
   url.searchParams.set('limit', '1'); // Just need metadata, not actual holders
 
   const response = await fetch(url.toString(), {
@@ -83,7 +99,7 @@ export async function fetchHoldersPage(
   const config = getConfig();
 
   const url = new URL(`${BASE_URL}/erc20/${tokenAddress}/owners`);
-  url.searchParams.set('chain', CHAIN);
+  url.searchParams.set('chain', getChain());
   url.searchParams.set('limit', '100');
   url.searchParams.set('order', 'DESC');
   if (cursor) {
@@ -133,7 +149,8 @@ export async function fetchAllTokenHolders(
   let consecutiveErrors = 0;
   const MAX_CONSECUTIVE_ERRORS = 5;
 
-  logger.info(`Fetching holders for token ${tokenAddress} on ${CHAIN}${startCursor ? ' (resuming)' : ''}`);
+  const network = getActiveNetwork();
+  logger.info(`Fetching holders for token ${tokenAddress} on ${network.chainName} (${getChain()})${startCursor ? ' (resuming)' : ''}`);
 
   do {
     try {
@@ -155,9 +172,10 @@ export async function fetchAllTokenHolders(
 
       logger.debug(`Fetched ${result.holders.length} holders, total: ${holders.length}, cursor: ${cursor ? 'yes' : 'no'}`);
 
-      // Rate limiting - 500ms between requests to avoid 429
+      // Rate limiting - wait between requests to avoid 429 errors
+      // Using conservative 1 second delay for stability
       if (cursor) {
-        await sleep(500);
+        await sleep(RATE_LIMIT_DELAY_MS);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -169,9 +187,9 @@ export async function fetchAllTokenHolders(
           throw new Error(`Rate limited after fetching ${holders.length} holders. Cursor: ${cursor}`);
         }
 
-        // Exponential backoff for rate limits
-        const backoffMs = Math.min(2000 * Math.pow(2, consecutiveErrors), 30000);
-        logger.warn(`Rate limited, waiting ${backoffMs}ms before retry (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+        // Exponential backoff for rate limits with higher base and max
+        const backoffMs = Math.min(RATE_LIMIT_BACKOFF_BASE_MS * Math.pow(2, consecutiveErrors - 1), RATE_LIMIT_BACKOFF_MAX_MS);
+        logger.warn(`Rate limited by Moralis API, backing off ${backoffMs / 1000}s before retry (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
         await sleep(backoffMs);
         continue; // Retry same cursor
       }

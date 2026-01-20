@@ -13,6 +13,7 @@ import {
   BatchRecipient,
   SystemConfig,
   createDefaultConfig,
+  RewardToken,
 } from '../models';
 import { getHolderBalanceMap } from './snapshot.service';
 
@@ -62,7 +63,7 @@ export async function calculateRewards(
     config: {
       minBalance: config.MIN_BALANCE,
       rewardPool: '0', // TBD - admin sets this on approval
-      rewardToken: config.REWARD_TOKEN,
+      rewardToken: config.REWARD_TOKEN as RewardToken,
       batchSize: config.BATCH_SIZE,
     },
   });
@@ -148,7 +149,10 @@ export async function calculateRewards(
     await db.collection<Recipient>('recipients').deleteMany({ distributionId });
 
     // Calculate and create recipient records
-    const rewardPool = BigInt(config.REWARD_POOL);
+    // Use default reward pool as placeholder - actual rewards set at approval time
+    // Default: 1000 AQUARI (1000 * 10^18 wei)
+    const DEFAULT_REWARD_POOL = '1000000000000000000000';
+    const rewardPool = BigInt(DEFAULT_REWARD_POOL);
     const recipients: Recipient[] = [];
     const batchRecipients: BatchRecipient[] = [];
     let totalDistributed = 0n;

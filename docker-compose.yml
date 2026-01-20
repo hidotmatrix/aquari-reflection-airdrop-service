@@ -1,20 +1,22 @@
 version: '3.8'
 
-services:
-  redis:
-    image: redis:7-alpine
-    container_name: aquari-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# ═══════════════════════════════════════════════════════════
+# AQUARI Airdrop - Docker Services
+# ═══════════════════════════════════════════════════════════
+# Usage:
+#   docker compose up -d              # Start all services
+#   docker compose up -d mongodb redis # Start only DB services
+#   docker compose down               # Stop all services
+#   docker compose down -v            # Stop and clear all data
+#
+# Clear database only:
+#   docker exec aquari-mongodb mongosh aquari-airdrop --eval "db.dropDatabase()"
+# ═══════════════════════════════════════════════════════════
 
+services:
+  # ─────────────────────────────────────────────────────────
+  # MongoDB - Main database
+  # ─────────────────────────────────────────────────────────
   mongodb:
     image: mongo:7
     container_name: aquari-mongodb
@@ -29,7 +31,52 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────
+  # Redis - Job queue (BullMQ)
+  # ─────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aquari-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────
+  # Anvil - Base mainnet fork for testing
+  # ─────────────────────────────────────────────────────────
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: aquari-anvil
+    ports:
+      - "8545:8545"
+    entrypoint: ["anvil"]
+    command:
+      - "--fork-url"
+      - "https://mainnet.base.org"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8545"
+      - "--block-time"
+      - "2"
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
 
 volumes:
-  redis_data:
   mongo_data:
+  redis_data:

@@ -114,3 +114,35 @@ export function isValidWeekId(weekId: string): boolean {
   const { week } = parseWeekId(weekId);
   return week >= 1 && week <= 53;
 }
+
+// ═══════════════════════════════════════════════════════════
+// Test Mode Week IDs
+// Format: "TEST-XXX" (e.g., "TEST-001", "TEST-002")
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Generate a test cycle ID
+ * @param cycleNumber - The test cycle number (1, 2, 3, etc.)
+ * @returns Test cycle ID in format "TEST-XXX"
+ */
+export function getTestCycleId(cycleNumber: number): string {
+  return `TEST-${cycleNumber.toString().padStart(3, '0')}`;
+}
+
+/**
+ * Check if a week ID is a test cycle ID
+ */
+export function isTestCycleId(weekId: string): boolean {
+  return /^TEST-\d{3}$/.test(weekId);
+}
+
+/**
+ * Parse test cycle number from ID
+ */
+export function parseTestCycleId(weekId: string): number {
+  const match = weekId.match(/^TEST-(\d{3})$/);
+  if (!match) {
+    throw new Error(`Invalid test cycle ID format: ${weekId}. Expected format: TEST-XXX`);
+  }
+  return parseInt(match[1]!, 10);
+}

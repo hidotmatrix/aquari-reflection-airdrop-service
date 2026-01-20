@@ -1,6 +1,6 @@
 import { Worker, Job, ConnectionOptions } from 'bullmq';
 import { MongoClient, Db, ObjectId } from 'mongodb';
-import { getConfig } from '../config/env';
+import { getConfig, getTokenAddress } from '../config/env';
 import { logger } from '../utils/logger';
 import { SnapshotJobData, SnapshotJobResult } from './queue';
 import { Snapshot, Holder, fromMoralisResponse } from '../models';
@@ -166,8 +166,9 @@ async function processSingleSnapshot(
     if (useMockData) {
       // Mock mode
       logger.info('[MOCK] Using mock holder data');
+      const tokenAddress = getTokenAddress();
       const { holders: mockHolders, apiCallCount: mockCalls } = await fetchMockHolders(
-        config.AQUARI_ADDRESS,
+        tokenAddress,
         500
       );
 
@@ -190,7 +191,8 @@ async function processSingleSnapshot(
       });
     } else {
       // Real mode - fetch from Moralis with incremental saving
-      logger.info(`Fetching holders from Moralis for ${config.AQUARI_ADDRESS}`);
+      const tokenAddress = getTokenAddress();
+      logger.info(`Fetching holders from Moralis for ${tokenAddress}`);
 
       let cursor = resumeCursor || '';
       let consecutiveErrors = 0;
@@ -200,7 +202,7 @@ async function processSingleSnapshot(
 
       do {
         try {
-          const result = await fetchHoldersPage(config.AQUARI_ADDRESS, cursor || undefined);
+          const result = await fetchHoldersPage(tokenAddress, cursor || undefined);
           apiCallCount++;
           consecutiveErrors = 0;
 

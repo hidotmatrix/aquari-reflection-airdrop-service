@@ -73,7 +73,7 @@
           </span>
         </td>
         <td class="px-5 py-3 text-sm text-emerald-400 font-mono font-medium"><%= r.balanceFormatted %> AQUARI</td>
-        <td class="px-5 py-3 text-sm text-gray-500"><%= r.snapshotAt ? new Date(r.snapshotAt).toLocaleString() : '—' %></td>
+        <td class="px-5 py-3 text-sm text-gray-500"><%= r.createdAt ? new Date(r.createdAt).toLocaleString() : '—' %></td>
       </tr>
       <% }) %>
     </tbody>
@@ -101,13 +101,13 @@
           </a>
         </td>
         <td class="px-5 py-3 text-sm text-gray-400 font-mono">
-          <%= r.balances?.start ? (BigInt(r.balances.start) / BigInt(10**18)).toLocaleString() : '—' %>
+          <%= r.balances?.start && /^\d+$/.test(r.balances.start) ? (BigInt(r.balances.start) / BigInt(10**18)).toLocaleString() : '—' %>
         </td>
         <td class="px-5 py-3 text-sm text-gray-400 font-mono">
-          <%= r.balances?.end ? (BigInt(r.balances.end) / BigInt(10**18)).toLocaleString() : '—' %>
+          <%= r.balances?.end && /^\d+$/.test(r.balances.end) ? (BigInt(r.balances.end) / BigInt(10**18)).toLocaleString() : '—' %>
         </td>
         <td class="px-5 py-3 text-sm text-white font-mono font-medium">
-          <%= r.balances?.min ? (BigInt(r.balances.min) / BigInt(10**18)).toLocaleString() : '—' %>
+          <%= r.balances?.min && /^\d+$/.test(r.balances.min) ? (BigInt(r.balances.min) / BigInt(10**18)).toLocaleString() : '—' %>
         </td>
         <td class="px-5 py-3 text-sm text-emerald-400 font-mono font-medium"><%= r.rewardFormatted || '—' %></td>
         <td class="px-5 py-3">

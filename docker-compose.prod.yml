@@ -1,0 +1,52 @@
+version: '3.8'
+
+# ═══════════════════════════════════════════════════════════
+# AQUARI Airdrop - Production Docker Services
+# ═══════════════════════════════════════════════════════════
+#
+# Uses external managed services:
+#   - MongoDB Atlas (cloud)
+#   - Redis Cloud
+#
+# Usage:
+#   1. Create .env.production with Atlas/Redis Cloud URLs
+#   2. Build: npm run build
+#   3. Start: docker compose -f docker-compose.prod.yml up -d
+#   4. Logs: docker compose -f docker-compose.prod.yml logs -f
+#   5. Stop: docker compose -f docker-compose.prod.yml down
+#
+# ═══════════════════════════════════════════════════════════
+
+services:
+  app:
+    build: .
+    container_name: aquari-airdrop
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - MODE=production
+    env_file:
+      - .env.production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# ═══════════════════════════════════════════════════════════
+# ENVIRONMENT VARIABLES REQUIRED IN .env.production:
+# ═══════════════════════════════════════════════════════════
+#
+# MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/aquari-airdrop
+# REDIS_URL=redis://default:password@redis-cloud-host:port
+# RPC_URL=https://mainnet.base.org
+# PRIVATE_KEY=your_wallet_private_key
+# MORALIS_API_KEY=your_moralis_key
+# ADMIN_USERNAME=secure_username
+# ADMIN_PASSWORD=secure_password
+# SESSION_SECRET=64_char_random_string
+#
+# ═══════════════════════════════════════════════════════════

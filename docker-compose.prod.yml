@@ -1,23 +1,34 @@
 version: '3.8'
 
 # ═══════════════════════════════════════════════════════════
-# AQUARI Airdrop - Production Docker Services
+# AQUARI Airdrop - Production Environment
 # ═══════════════════════════════════════════════════════════
 #
-# Uses external managed services:
-#   - MongoDB Atlas (cloud)
-#   - Redis Cloud
+# OPTION A: Cloud Services (Recommended - $8/month)
+#   Uses MongoDB Atlas + Redis Cloud (free tiers)
 #
-# Usage:
-#   1. Create .env.production with Atlas/Redis Cloud URLs
-#   2. Build: npm run build
-#   3. Start: docker compose -f docker-compose.prod.yml up -d
-#   4. Logs: docker compose -f docker-compose.prod.yml logs -f
-#   5. Stop: docker compose -f docker-compose.prod.yml down
+#   USAGE:
+#     1. Create .env.production with cloud URLs
+#     2. npm run build
+#     3. docker compose -f docker-compose.prod.yml up -d app
+#     4. Done! Only runs the Node.js app
+#
+# OPTION B: Self-Hosted (All-in-one - $15/month)
+#   Runs MongoDB + Redis locally
+#
+#   USAGE:
+#     1. Create .env.production with local URLs
+#     2. npm run build
+#     3. docker compose -f docker-compose.prod.yml up -d
+#     4. Done! Runs app + MongoDB + Redis
 #
 # ═══════════════════════════════════════════════════════════
 
 services:
+  # ─────────────────────────────────────────────────────────
+  # Node.js Application
+  # Always required
+  # ─────────────────────────────────────────────────────────
   app:
     build: .
     container_name: aquari-airdrop
@@ -28,6 +39,13 @@ services:
       - MODE=production
     env_file:
       - .env.production
+    depends_on:
+      mongodb:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_healthy
+        required: false
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
@@ -35,18 +53,129 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────────────────────
+  # MongoDB (Optional - for self-hosted setup)
+  # Start with: docker compose -f docker-compose.prod.yml up -d mongodb
+  # Connection: mongodb://localhost:27017/aquari-airdrop
+  # ─────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: aquari-mongodb-prod
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_prod_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: aquari-airdrop
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - self-hosted
+
+  # ─────────────────────────────────────────────────────────
+  # Redis (Optional - for self-hosted setup)
+  # Start with: docker compose -f docker-compose.prod.yml up -d redis
+  # Connection: redis://localhost:6379
+  # ─────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aquari-redis-prod
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_prod_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - self-hosted
+
+volumes:
+  mongo_prod_data:
+  redis_prod_data:
 
 # ═══════════════════════════════════════════════════════════
-# ENVIRONMENT VARIABLES REQUIRED IN .env.production:
+# QUICK START COMMANDS
 # ═══════════════════════════════════════════════════════════
 #
+# OPTION A - Cloud Services (app only):
+#   docker compose -f docker-compose.prod.yml up -d app
+#   docker compose -f docker-compose.prod.yml logs -f app
+#   docker compose -f docker-compose.prod.yml down
+#
+# OPTION B - Self-Hosted (all services):
+#   docker compose -f docker-compose.prod.yml --profile self-hosted up -d
+#   docker compose -f docker-compose.prod.yml --profile self-hosted logs -f
+#   docker compose -f docker-compose.prod.yml --profile self-hosted down
+#
+# REBUILD after code changes:
+#   npm run build
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d app
+#
+# VIEW LOGS:
+#   docker compose -f docker-compose.prod.yml logs -f
+#   docker compose -f docker-compose.prod.yml logs -f app
+#
+# ═══════════════════════════════════════════════════════════
+# .env.production TEMPLATE
+# ═══════════════════════════════════════════════════════════
+#
+# NODE_ENV=production
+# PORT=3000
+# MODE=production
+# LOG_LEVEL=info
+#
+# # --- DATABASE (choose one) ---
+# # Cloud (Atlas):
 # MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/aquari-airdrop
-# REDIS_URL=redis://default:password@redis-cloud-host:port
+# # Self-hosted:
+# # MONGODB_URI=mongodb://localhost:27017/aquari-airdrop
+#
+# # --- REDIS (choose one) ---
+# # Cloud:
+# REDIS_URL=redis://default:password@redis-host:port
+# # Self-hosted:
+# # REDIS_URL=redis://localhost:6379
+#
+# # --- BLOCKCHAIN ---
 # RPC_URL=https://mainnet.base.org
 # PRIVATE_KEY=your_wallet_private_key
-# MORALIS_API_KEY=your_moralis_key
-# ADMIN_USERNAME=secure_username
-# ADMIN_PASSWORD=secure_password
-# SESSION_SECRET=64_char_random_string
+# MORALIS_API_KEY=your_moralis_api_key
+#
+# # --- ADMIN AUTH ---
+# ADMIN_USERNAME=secure_admin_username
+# ADMIN_PASSWORD=super_secure_password_here
+# SESSION_SECRET=64_character_random_string_for_sessions
+#
+# # --- AIRDROP CONFIG ---
+# MIN_BALANCE=1000
+# BATCH_SIZE=100
+# MAX_GAS_PRICE=50000000000
+# CONFIRMATIONS=3
 #
 # ═══════════════════════════════════════════════════════════

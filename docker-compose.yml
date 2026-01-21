@@ -1,21 +1,24 @@
 version: '3.8'
 
 # ═══════════════════════════════════════════════════════════
-# AQUARI Airdrop - Docker Services
+# AQUARI Airdrop - Development Environment
 # ═══════════════════════════════════════════════════════════
-# Usage:
-#   docker compose up -d              # Start all services
-#   docker compose up -d mongodb redis # Start only DB services
-#   docker compose down               # Stop all services
-#   docker compose down -v            # Stop and clear all data
 #
-# Clear database only:
-#   docker exec aquari-mongodb mongosh aquari-airdrop --eval "db.dropDatabase()"
+# USAGE:
+#   docker compose up -d          # Start everything (MongoDB, Redis, Anvil)
+#   docker compose logs -f        # View all logs
+#   docker compose down           # Stop everything
+#   docker compose down -v        # Stop and DELETE all data
+#
+# Then run the app locally:
+#   npm run dev
+#
 # ═══════════════════════════════════════════════════════════
 
 services:
   # ─────────────────────────────────────────────────────────
   # MongoDB - Main database
+  # Connection: mongodb://localhost:27017/aquari-airdrop
   # ─────────────────────────────────────────────────────────
   mongodb:
     image: mongo:7
@@ -35,6 +38,7 @@ services:
 
   # ─────────────────────────────────────────────────────────
   # Redis - Job queue (BullMQ)
+  # Connection: redis://localhost:6379
   # ─────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -53,6 +57,8 @@ services:
 
   # ─────────────────────────────────────────────────────────
   # Anvil - Base mainnet fork for testing
+  # RPC URL: http://localhost:8545
+  # Test wallet: 0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199
   # ─────────────────────────────────────────────────────────
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest

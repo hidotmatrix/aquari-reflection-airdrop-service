@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import { getConfig, getActiveNetwork, getRpcUrl, getDisperseAddress, getTokenAddress } from '../config/env';
 import { logger } from '../utils/logger';
 import { BatchRecipient, BatchExecution } from '../models';
+import { getGasPrices, isGasAcceptable, estimateAirdropCost, waitForAcceptableGas } from '../utils/gas-oracle';
 
 // ═══════════════════════════════════════════════════════════
 // Blockchain Service
@@ -400,4 +401,157 @@ export async function getBlockchainInfo(): Promise<{
 // For testing - reset mock counter
 export function resetMockCounter(): void {
   mockTxCounter = 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Pre-Flight Checks
+// ═══════════════════════════════════════════════════════════
+
+export interface PreFlightCheckResult {
+  passed: boolean;
+  checks: {
+    ethBalance: { passed: boolean; message: string; value: string };
+    tokenBalance: { passed: boolean; message: string; value: string };
+    gasPrice: { passed: boolean; message: string; value: string };
+    allowance: { passed: boolean; message: string; value: string };
+  };
+  estimatedCost?: {
+    gasUnits: string;
+    costEth: string;
+  };
+}
+
+/**
+ * Run pre-flight checks before executing airdrop
+ * Validates ETH balance, token balance, gas price, and allowance
+ */
+export async function runPreFlightChecks(
+  recipientCount: number,
+  totalTokenAmount: bigint
+): Promise<PreFlightCheckResult> {
+  const config = getConfig();
+
+  // Mock mode - always passes
+  if (config.MOCK_TRANSACTIONS) {
+    return {
+      passed: true,
+      checks: {
+        ethBalance: { passed: true, message: 'Mock mode - skipped', value: '10 ETH' },
+        tokenBalance: { passed: true, message: 'Mock mode - skipped', value: '100,000 AQUARI' },
+        gasPrice: { passed: true, message: 'Mock mode - skipped', value: '1 gwei' },
+        allowance: { passed: true, message: 'Mock mode - skipped', value: 'Unlimited' },
+      },
+    };
+  }
+
+  const checks: PreFlightCheckResult['checks'] = {
+    ethBalance: { passed: false, message: '', value: '0' },
+    tokenBalance: { passed: false, message: '', value: '0' },
+    gasPrice: { passed: false, message: '', value: '0' },
+    allowance: { passed: false, message: '', value: '0' },
+  };
+
+  // Get current balances and gas prices
+  const [ethBalance, tokenBalance, allowance, gasCheck, gasEstimate] = await Promise.all([
+    getWalletEthBalance(),
+    getWalletTokenBalance(),
+    getDisperseAllowance(),
+    isGasAcceptable(),
+    estimateAirdropCost(recipientCount),
+  ]);
+
+  // Check ETH balance (need enough for gas)
+  const ethBalanceBigInt = BigInt(ethBalance);
+  const requiredEth = gasEstimate.estimatedCostWei * 2n; // 2x for safety margin
+  checks.ethBalance = {
+    passed: ethBalanceBigInt >= requiredEth,
+    message: ethBalanceBigInt >= requiredEth
+      ? 'Sufficient ETH for gas'
+      : `Insufficient ETH: have ${(Number(ethBalanceBigInt) / 1e18).toFixed(4)}, need ~${(Number(requiredEth) / 1e18).toFixed(4)}`,
+    value: `${(Number(ethBalanceBigInt) / 1e18).toFixed(4)} ETH`,
+  };
+
+  // Check token balance
+  const tokenBalanceBigInt = BigInt(tokenBalance);
+  checks.tokenBalance = {
+    passed: tokenBalanceBigInt >= totalTokenAmount,
+    message: tokenBalanceBigInt >= totalTokenAmount
+      ? 'Sufficient token balance'
+      : `Insufficient tokens: have ${(Number(tokenBalanceBigInt) / 1e18).toLocaleString()}, need ${(Number(totalTokenAmount) / 1e18).toLocaleString()}`,
+    value: `${(Number(tokenBalanceBigInt) / 1e18).toLocaleString()} AQUARI`,
+  };
+
+  // Check gas price
+  checks.gasPrice = {
+    passed: gasCheck.acceptable,
+    message: gasCheck.acceptable
+      ? 'Gas price acceptable'
+      : gasCheck.reason || 'Gas price too high',
+    value: `${(Number(gasCheck.gasPrices.current) / 1e9).toFixed(2)} gwei`,
+  };
+
+  // Check allowance
+  const allowanceBigInt = BigInt(allowance);
+  checks.allowance = {
+    passed: allowanceBigInt >= totalTokenAmount,
+    message: allowanceBigInt >= totalTokenAmount
+      ? 'Sufficient allowance'
+      : 'Allowance needed (will be set automatically)',
+    value: allowanceBigInt >= totalTokenAmount ? 'Sufficient' : 'Need approval',
+  };
+
+  const passed = checks.ethBalance.passed &&
+    checks.tokenBalance.passed &&
+    checks.gasPrice.passed;
+  // Note: allowance check doesn't fail - we'll approve if needed
+
+  return {
+    passed,
+    checks,
+    estimatedCost: {
+      gasUnits: gasEstimate.estimatedGas.toString(),
+      costEth: gasEstimate.estimatedCostEth,
+    },
+  };
+}
+
+/**
+ * Wait for acceptable conditions before airdrop
+ * Returns true if ready, false if timeout/conditions not met
+ */
+export async function waitForAirdropConditions(
+  recipientCount: number,
+  totalTokenAmount: bigint,
+  maxWaitMs: number = 300000
+): Promise<{ ready: boolean; reason?: string }> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const checks = await runPreFlightChecks(recipientCount, totalTokenAmount);
+
+    if (checks.passed) {
+      return { ready: true };
+    }
+
+    // Check what's failing
+    if (!checks.checks.ethBalance.passed) {
+      return { ready: false, reason: checks.checks.ethBalance.message };
+    }
+
+    if (!checks.checks.tokenBalance.passed) {
+      return { ready: false, reason: checks.checks.tokenBalance.message };
+    }
+
+    // Gas price might become acceptable - wait and retry
+    if (!checks.checks.gasPrice.passed) {
+      logger.info('Gas price too high, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 15000));
+      continue;
+    }
+
+    // If we get here, something else failed
+    return { ready: false, reason: 'Pre-flight checks failed' };
+  }
+
+  return { ready: false, reason: 'Timeout waiting for acceptable conditions' };
 }

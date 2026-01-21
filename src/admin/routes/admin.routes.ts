@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { requireAuth, addUserToLocals } from '../middleware/auth.middleware';
+import { loginRateLimiter } from '../middleware/rate-limiter';
 import * as ctrl from '../controllers/admin.controller';
+import * as analyticsCtrl from '../controllers/analytics.controller';
 
 // ═══════════════════════════════════════════════════════════
 // Admin Routes
@@ -11,9 +13,9 @@ const router = Router();
 // Add user info to all routes
 router.use(addUserToLocals);
 
-// Public routes
+// Public routes (with rate limiting on login)
 router.get('/login', ctrl.showLogin);
-router.post('/login', ctrl.handleLogin);
+router.post('/login', loginRateLimiter, ctrl.handleLogin);
 router.get('/logout', ctrl.handleLogout);
 
 // Protected routes (all READ-ONLY)
@@ -47,5 +49,29 @@ router.get('/jobs/:jobId/logs', ctrl.getJobLogs);
 // Dev tools (only works in development)
 router.post('/dev/clear-data', ctrl.clearData);
 router.post('/dev/delete-database', ctrl.deleteDatabase);
+
+// ═══════════════════════════════════════════════════════════
+// Analytics and Export Routes
+// ═══════════════════════════════════════════════════════════
+
+router.get('/analytics', analyticsCtrl.analyticsPage);
+
+// Analytics API endpoints
+router.get('/analytics/api/gas', analyticsCtrl.gasAnalytics);
+router.get('/analytics/api/distributions', analyticsCtrl.distributionAnalytics);
+router.get('/analytics/api/holder-growth', analyticsCtrl.holderGrowthAnalytics);
+
+// CSV Export endpoints
+router.get('/analytics/export/summary', analyticsCtrl.exportSummary);
+router.get('/analytics/export/gas', analyticsCtrl.exportGas);
+router.get('/export/distribution/:distributionId/recipients', analyticsCtrl.exportRecipients);
+router.get('/export/distribution/:distributionId/batches', analyticsCtrl.exportBatches);
+router.get('/export/snapshot/:snapshotId/holders', analyticsCtrl.exportHolders);
+
+// Batch retry endpoint
+router.post('/batches/:id/retry', ctrl.retryBatch);
+
+// Blockchain status endpoint (for pre-flight checks)
+router.get('/blockchain/status', ctrl.getBlockchainStatus);
 
 export default router;

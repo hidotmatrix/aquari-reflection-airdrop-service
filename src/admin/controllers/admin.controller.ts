@@ -4,6 +4,9 @@ import { getConfig, getActiveNetwork, getModeName, isForkMode, getTokenAddress }
 import { getPagination, LIMITS, buildPaginationMeta } from '../../utils/pagination';
 import { isValidAddress } from '../../utils/format';
 import { getCurrentWeekId } from '../../utils/week';
+import { resetLoginRateLimit } from '../middleware/rate-limiter';
+import { explorerHelpers } from '../../utils/explorer';
+import { getGasPrices, isGasAcceptable, estimateAirdropCost } from '../../utils/gas-oracle';
 import {
   Snapshot,
   Holder,
@@ -15,6 +18,11 @@ import {
 import { startJob } from '../../services/job.runner';
 import { getJobById, getActiveJobs as getActiveJobsFromDb, getRecentJobs } from '../../services/job.service';
 import { getSchedulerState, manualStartWorkflow } from '../../jobs/scheduler';
+import {
+  getWalletEthBalance,
+  getWalletTokenBalance,
+  getWalletAddress,
+} from '../../services/blockchain.service';
 
 // ═══════════════════════════════════════════════════════════
 // LOGIN / LOGOUT
@@ -38,6 +46,10 @@ export function handleLogin(req: Request, res: Response): void {
   ) {
     req.session.isAuthenticated = true;
     req.session.username = username;
+
+    // Reset rate limit on successful login
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    resetLoginRateLimit(ip, username);
 
     const returnTo = req.session.returnTo || '/admin/dashboard';
     delete req.session.returnTo;
@@ -1051,5 +1063,161 @@ export async function retryFailedAirdrop(req: Request, res: Response): Promise<v
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ success: false, error: message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// BATCH RETRY (Single batch)
+// ═══════════════════════════════════════════════════════════
+
+export async function retryBatch(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const config = getConfig();
+  const { id } = req.params;
+
+  try {
+    const batch = await db.collection<Batch>('batches').findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!batch) {
+      res.status(404).json({ success: false, error: 'Batch not found' });
+      return;
+    }
+
+    if (batch.status !== 'failed') {
+      res.status(400).json({
+        success: false,
+        error: `Batch must be in "failed" status to retry (current: ${batch.status})`,
+      });
+      return;
+    }
+
+    // Reset batch status to pending
+    await db.collection<Batch>('batches').updateOne(
+      { _id: batch._id },
+      {
+        $set: {
+          status: 'pending',
+          retryCount: 0,
+          updatedAt: new Date(),
+        },
+        $unset: { lastError: '' },
+      }
+    );
+
+    // Reset associated recipients
+    const recipientAddresses = batch.recipients?.map(r => r.address) || [];
+    await db.collection<Recipient>('recipients').updateMany(
+      {
+        distributionId: batch.distributionId,
+        address: { $in: recipientAddresses },
+      },
+      {
+        $set: {
+          status: 'pending',
+          retryCount: 0,
+          updatedAt: new Date(),
+        },
+        $unset: { error: '' },
+      }
+    );
+
+    // Get the distribution
+    const distribution = await db.collection<Distribution>('distributions').findOne({
+      _id: batch.distributionId,
+    });
+
+    if (!distribution) {
+      res.status(404).json({ success: false, error: 'Distribution not found' });
+      return;
+    }
+
+    // Ensure distribution is in processing state
+    if (distribution.status !== 'processing') {
+      await db.collection<Distribution>('distributions').updateOne(
+        { _id: distribution._id },
+        { $set: { status: 'processing', updatedAt: new Date() } }
+      );
+    }
+
+    // Start airdrop job to process this batch
+    const job = await startJob(db, 'airdrop', distribution.weekId);
+
+    res.json({
+      success: true,
+      message: `Batch #${batch.batchNumber} queued for retry`,
+      mode: config.MOCK_TRANSACTIONS ? 'SIMULATED' : 'PRODUCTION',
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// BLOCKCHAIN INFO (for pre-checks)
+// ═══════════════════════════════════════════════════════════
+
+export async function getBlockchainStatus(req: Request, res: Response): Promise<void> {
+  try {
+    const [ethBalance, tokenBalance, gasPrices, gasStatus] = await Promise.all([
+      getWalletEthBalance(),
+      getWalletTokenBalance(),
+      getGasPrices(),
+      isGasAcceptable(),
+    ]);
+
+    res.json({
+      success: true,
+      wallet: {
+        address: getWalletAddress(),
+        ethBalance,
+        ethBalanceFormatted: formatEthBalance(ethBalance),
+        tokenBalance,
+        tokenBalanceFormatted: formatTokenBalance(tokenBalance),
+      },
+      gas: {
+        current: gasPrices.current.toString(),
+        currentGwei: formatGwei(gasPrices.current),
+        maxAllowed: gasPrices.maxAllowed.toString(),
+        maxAllowedGwei: formatGwei(gasPrices.maxAllowed),
+        isAcceptable: gasStatus.acceptable,
+        reason: gasStatus.reason,
+      },
+      explorer: explorerHelpers.baseUrl,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+// Helper functions
+function formatGwei(wei: bigint): string {
+  return (Number(wei) / 1e9).toFixed(2);
+}
+
+function formatEthBalance(wei: string): string {
+  try {
+    const balance = BigInt(wei);
+    return (Number(balance) / 1e18).toFixed(4) + ' ETH';
+  } catch {
+    return '0 ETH';
+  }
+}
+
+function formatTokenBalance(wei: string): string {
+  try {
+    const balance = BigInt(wei);
+    return (Number(balance) / 1e18).toLocaleString() + ' AQUARI';
+  } catch {
+    return '0 AQUARI';
   }
 }

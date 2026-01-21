@@ -8,7 +8,8 @@ import { getConfig, getModeName } from './config/env';
 import { connectDatabase, createIndexes, closeDatabase, getDatabaseStatus, checkDatabaseHealth } from './config/database';
 import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired } from './config/redis';
 import { initializeJobs, stopAllJobs, startWorker, stopWorker } from './jobs';
-import { initializeBlockchain } from './services/blockchain.service';
+import { initializeBlockchain, getWalletEthBalance, getWalletTokenBalance, getWalletAddress } from './services/blockchain.service';
+import { getGasPrices } from './utils/gas-oracle';
 import adminRoutes from './admin/routes/admin.routes';
 import { logger } from './utils/logger';
 
@@ -128,6 +129,58 @@ async function main(): Promise<void> {
         checkRedisHealth(),
       ]);
 
+      // Get blockchain status
+      let blockchainStatus: {
+        healthy: boolean;
+        walletAddress: string | null;
+        ethBalance?: string;
+        tokenBalance?: string;
+        gasPrice?: string;
+      } = { healthy: false, walletAddress: null };
+
+      try {
+        const [ethBalance, tokenBalance, gasPrices] = await Promise.all([
+          getWalletEthBalance(),
+          getWalletTokenBalance(),
+          getGasPrices(),
+        ]);
+
+        blockchainStatus = {
+          healthy: true,
+          walletAddress: getWalletAddress(),
+          ethBalance: (Number(ethBalance) / 1e18).toFixed(4) + ' ETH',
+          tokenBalance: (Number(tokenBalance) / 1e18).toLocaleString() + ' AQUARI',
+          gasPrice: (Number(gasPrices.current) / 1e9).toFixed(2) + ' gwei',
+        };
+      } catch {
+        blockchainStatus.healthy = config.MOCK_TRANSACTIONS;
+      }
+
+      // Get last snapshot info from DB
+      let lastSnapshot: { weekId: string; status: string; timestamp: Date } | null = null;
+      try {
+        const snapshot = await db.collection('snapshots').findOne({}, { sort: { timestamp: -1 } });
+        if (snapshot) {
+          lastSnapshot = {
+            weekId: snapshot.weekId,
+            status: snapshot.status,
+            timestamp: snapshot.timestamp,
+          };
+        }
+      } catch {
+        // Ignore
+      }
+
+      // Get pending batches count
+      let pendingBatches = 0;
+      try {
+        pendingBatches = await db.collection('batches').countDocuments({
+          status: { $in: ['pending', 'processing'] },
+        });
+      } catch {
+        // Ignore
+      }
+
       const isHealthy = dbHealthy && (redisHealthy || !isRedisRequired());
 
       res.status(isHealthy ? 200 : 503).json({
@@ -148,6 +201,11 @@ async function main(): Promise<void> {
             healthy: redisHealthy,
             required: isRedisRequired(),
           },
+          blockchain: blockchainStatus,
+        },
+        airdrop: {
+          lastSnapshot,
+          pendingBatches,
         },
       });
     });

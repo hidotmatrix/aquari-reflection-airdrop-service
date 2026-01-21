@@ -106,11 +106,29 @@ export function getPreset(mode: Mode): Preset {
 // Contract Addresses (Same for fork and production - Base mainnet)
 // ═══════════════════════════════════════════════════════════
 export const CONTRACTS = {
+  // Default token (can be overridden with TOKEN_ADDRESS env var)
   AQUARI_TOKEN: '0x7F0E9971D3320521Fc88F863E173a4cddBB051bA',
   DISPERSE: '0xD152f549545093347A162Dce210e7293f1452150',
   CHAIN_ID: 8453,
   CHAIN_NAME: 'Base',
   MORALIS_CHAIN: 'base',
+};
+
+// ═══════════════════════════════════════════════════════════
+// Supported Tokens (for quick switching via TOKEN_ADDRESS env)
+// ═══════════════════════════════════════════════════════════
+export const SUPPORTED_TOKENS: Record<string, { address: string; symbol: string; decimals: number }> = {
+  AQUARI: {
+    address: '0x7F0E9971D3320521Fc88F863E173a4cddBB051bA',
+    symbol: 'AQUARI',
+    decimals: 18,
+  },
+  // Add more tokens here as needed:
+  // USDC: {
+  //   address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  //   symbol: 'USDC',
+  //   decimals: 6,
+  // },
 };
 
 // ═══════════════════════════════════════════════════════════

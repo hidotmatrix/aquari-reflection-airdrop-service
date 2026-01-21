@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Db, ObjectId } from 'mongodb';
-import { getConfig, getActiveNetwork, getModeName, isForkMode, getTokenAddress } from '../../config/env';
+import { getConfig, getActiveNetwork, getModeName, isForkMode, getTokenAddress, getTokenSymbol, getTokenDecimals } from '../../config/env';
 import { getPagination, LIMITS, buildPaginationMeta } from '../../utils/pagination';
 import { isValidAddress } from '../../utils/format';
 import { getCurrentWeekId } from '../../utils/week';
@@ -118,6 +118,51 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
   const network = getActiveNetwork();
   const schedulerState = getSchedulerState();
 
+  // Get wallet balances for display
+  const tokenSymbol = getTokenSymbol();
+  const tokenDecimals = getTokenDecimals();
+  const divisor = Math.pow(10, tokenDecimals);
+
+  let walletInfo = {
+    address: getWalletAddress(),
+    ethBalance: '0',
+    ethBalanceNum: 0,
+    tokenBalance: '0',
+    tokenBalanceNum: 0,
+    tokenSymbol,
+    needsEth: false,
+    needsTokens: false,
+    needsFunding: false,
+  };
+
+  try {
+    const [ethBalance, tokenBalance] = await Promise.all([
+      getWalletEthBalance(),
+      getWalletTokenBalance(),
+    ]);
+
+    const ethBalanceNum = Number(ethBalance) / 1e18;
+    const tokenBalanceNum = Number(tokenBalance) / divisor;
+
+    // Thresholds for warnings
+    const MIN_ETH = 0.01; // Minimum ETH for gas
+    const MIN_TOKENS = 1000; // Minimum tokens to be useful
+
+    walletInfo = {
+      address: getWalletAddress(),
+      ethBalance: ethBalanceNum.toFixed(6),
+      ethBalanceNum,
+      tokenBalance: tokenBalanceNum.toLocaleString(),
+      tokenBalanceNum,
+      tokenSymbol,
+      needsEth: ethBalanceNum < MIN_ETH,
+      needsTokens: tokenBalanceNum < MIN_TOKENS,
+      needsFunding: ethBalanceNum < MIN_ETH || tokenBalanceNum < MIN_TOKENS,
+    };
+  } catch {
+    // Mock mode or error - use defaults
+  }
+
   res.render('dashboard', {
     latestDistribution,
     totalSnapshots,
@@ -145,6 +190,7 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
       nextActionTime: schedulerState.nextActionTime,
     },
     schedule: config.SCHEDULE,
+    wallet: walletInfo,
   });
 }
 

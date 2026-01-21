@@ -183,6 +183,76 @@
   <% } %>
 </div>
 
+<!-- Wallet Status -->
+<% if (wallet && wallet.address) { %>
+<div class="bg-dark-700 border <%= wallet.needsFunding ? 'border-yellow-500/50' : 'border-dark-500' %> rounded-xl p-5 mb-8">
+  <div class="flex flex-wrap gap-6 items-center justify-between">
+    <div class="flex items-center gap-6">
+      <!-- Wallet Label -->
+      <div>
+        <span class="text-gray-500 text-xs uppercase block mb-1">Airdrop Wallet</span>
+        <a href="https://basescan.org/address/<%= wallet.address %>" target="_blank"
+           class="text-sm font-mono text-cyan-400 hover:text-cyan-300">
+          <%= wallet.address.slice(0, 6) %>...<%= wallet.address.slice(-4) %>
+        </a>
+      </div>
+      <!-- ETH Balance -->
+      <div>
+        <span class="text-gray-500 text-xs uppercase block mb-1">ETH (Gas)</span>
+        <span class="text-lg font-mono <%= wallet.needsEth ? 'text-red-400' : 'text-white' %>">
+          <%= wallet.ethBalance %> ETH
+        </span>
+        <% if (wallet.needsEth) { %>
+        <span class="text-xs text-red-400 block">⚠️ Low</span>
+        <% } %>
+      </div>
+      <!-- Token Balance -->
+      <div>
+        <span class="text-gray-500 text-xs uppercase block mb-1"><%= wallet.tokenSymbol %> (Airdrop)</span>
+        <span class="text-lg font-mono <%= wallet.needsTokens ? 'text-red-400' : 'text-emerald-400' %>">
+          <%= wallet.tokenBalance %> <%= wallet.tokenSymbol %>
+        </span>
+        <% if (wallet.needsTokens) { %>
+        <span class="text-xs text-red-400 block">⚠️ Low</span>
+        <% } %>
+      </div>
+    </div>
+
+    <% if (wallet.needsFunding) { %>
+    <!-- Funding Warning -->
+    <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 max-w-md">
+      <div class="flex items-start gap-2">
+        <span class="text-yellow-400 text-lg">⚠️</span>
+        <div>
+          <p class="text-yellow-400 text-sm font-medium">Wallet Needs Funding</p>
+          <p class="text-yellow-200/70 text-xs mt-1">
+            <% if (wallet.needsEth) { %>
+            Send ETH for gas fees (min 0.01 ETH recommended).<br>
+            <% } %>
+            <% if (wallet.needsTokens) { %>
+            Send <%= wallet.tokenSymbol %> tokens to enable airdrops.
+            <% } %>
+          </p>
+          <button onclick="copyAddress('<%= wallet.address %>')"
+                  class="mt-2 text-xs text-cyan-400 hover:text-cyan-300 underline">
+            Copy Address
+          </button>
+        </div>
+      </div>
+    </div>
+    <% } %>
+  </div>
+</div>
+
+<script>
+function copyAddress(address) {
+  navigator.clipboard.writeText(address).then(() => {
+    alert('Wallet address copied to clipboard!');
+  });
+}
+</script>
+<% } %>
+
 <!-- Stats Cards -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
   <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">

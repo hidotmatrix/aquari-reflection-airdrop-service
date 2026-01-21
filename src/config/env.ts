@@ -15,6 +15,8 @@ interface NetworkConfig {
   chainId: number;
   chainName: string;
   tokenAddress: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
   disperseAddress: string;
   moralisChain: string;
 }
@@ -133,12 +135,18 @@ export function validateEnv(): EnvConfig {
     throw new Error('PRIVATE_KEY is required for production mode');
   }
 
-  // Network config
+  // Network config (TOKEN_ADDRESS can be overridden via env)
+  const tokenAddress = getEnvVar('TOKEN_ADDRESS', false) || CONTRACTS.AQUARI_TOKEN;
+  const tokenSymbol = getEnvVar('TOKEN_SYMBOL', false) || 'AQUARI';
+  const tokenDecimals = getEnvVarAsInt('TOKEN_DECIMALS', 18);
+
   const network: NetworkConfig = {
     rpcUrl: getEnvVar('RPC_URL', false) || preset.rpcUrl,
     chainId: CONTRACTS.CHAIN_ID,
     chainName: CONTRACTS.CHAIN_NAME,
-    tokenAddress: CONTRACTS.AQUARI_TOKEN,
+    tokenAddress,
+    tokenSymbol,
+    tokenDecimals,
     disperseAddress: CONTRACTS.DISPERSE,
     moralisChain: CONTRACTS.MORALIS_CHAIN,
   };
@@ -253,6 +261,14 @@ export function getMoralisChain(): string {
 
 export function getTokenAddress(): string {
   return getActiveNetwork().tokenAddress;
+}
+
+export function getTokenSymbol(): string {
+  return getActiveNetwork().tokenSymbol;
+}
+
+export function getTokenDecimals(): number {
+  return getActiveNetwork().tokenDecimals;
 }
 
 export function getDisperseAddress(): string {

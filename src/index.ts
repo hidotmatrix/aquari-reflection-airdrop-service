@@ -4,7 +4,7 @@ import session from 'express-session';
 import expressLayouts from 'express-ejs-layouts';
 import path from 'path';
 import { ethers } from 'ethers';
-import { getConfig, getModeName } from './config/env';
+import { getConfig, getModeName, getTokenSymbol, getTokenDecimals } from './config/env';
 import { connectDatabase, createIndexes, closeDatabase, getDatabaseStatus, checkDatabaseHealth } from './config/database';
 import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired } from './config/redis';
 import { initializeJobs, stopAllJobs, startWorker, stopWorker } from './jobs';
@@ -17,7 +17,67 @@ import { logger } from './utils/logger';
 // Main Application Entry Point
 // ═══════════════════════════════════════════════════════════
 
+// Minimum recommended balances
+const MIN_ETH_BALANCE = 0.01; // 0.01 ETH for gas
+const MIN_TOKEN_BALANCE = 1000; // Minimum tokens to airdrop
+
 let isShuttingDown = false;
+
+/**
+ * Log wallet balances on startup with warnings if low
+ */
+async function logWalletBalances(config: ReturnType<typeof getConfig>): Promise<void> {
+  logger.info('───────────────────────────────────────────────────────────');
+  logger.info('WALLET BALANCES:');
+
+  try {
+    const [ethBalance, tokenBalance] = await Promise.all([
+      getWalletEthBalance(),
+      getWalletTokenBalance(),
+    ]);
+
+    const tokenSymbol = getTokenSymbol();
+    const tokenDecimals = getTokenDecimals();
+    const divisor = Math.pow(10, tokenDecimals);
+
+    const ethBalanceNum = Number(ethBalance) / 1e18;
+    const tokenBalanceNum = Number(tokenBalance) / divisor;
+
+    // Log ETH balance
+    if (ethBalanceNum < MIN_ETH_BALANCE) {
+      logger.warn(`  ETH Balance: ${ethBalanceNum.toFixed(6)} ETH ⚠️  LOW - Fund wallet for gas fees!`);
+    } else {
+      logger.info(`  ETH Balance: ${ethBalanceNum.toFixed(6)} ETH ✓`);
+    }
+
+    // Log token balance
+    if (tokenBalanceNum < MIN_TOKEN_BALANCE) {
+      logger.warn(`  ${tokenSymbol} Balance: ${tokenBalanceNum.toLocaleString()} ${tokenSymbol} ⚠️  LOW - Fund wallet with tokens to airdrop!`);
+    } else {
+      logger.info(`  ${tokenSymbol} Balance: ${tokenBalanceNum.toLocaleString()} ${tokenSymbol} ✓`);
+    }
+
+    // Show wallet address for easy funding
+    const walletAddress = getWalletAddress();
+    if (walletAddress && (ethBalanceNum < MIN_ETH_BALANCE || tokenBalanceNum < MIN_TOKEN_BALANCE)) {
+      logger.warn('───────────────────────────────────────────────────────────');
+      logger.warn('⚠️  WALLET NEEDS FUNDING:');
+      logger.warn(`  Address: ${walletAddress}`);
+      if (ethBalanceNum < MIN_ETH_BALANCE) {
+        logger.warn(`  → Send ETH for gas fees (recommended: ${MIN_ETH_BALANCE}+ ETH)`);
+      }
+      if (tokenBalanceNum < MIN_TOKEN_BALANCE) {
+        logger.warn(`  → Send ${tokenSymbol} tokens to airdrop`);
+      }
+    }
+  } catch (error) {
+    if (config.MOCK_TRANSACTIONS) {
+      logger.info('  [MOCK MODE] Wallet balances simulated');
+    } else {
+      logger.error('  Failed to fetch wallet balances:', error);
+    }
+  }
+}
 
 async function main(): Promise<void> {
   try {
@@ -53,6 +113,9 @@ async function main(): Promise<void> {
 
     // Initialize blockchain service
     initializeBlockchain();
+
+    // Log wallet balances on startup
+    await logWalletBalances(config);
 
     // Initialize cron jobs (this also initializes Redis)
     try {
@@ -145,11 +208,13 @@ async function main(): Promise<void> {
           getGasPrices(),
         ]);
 
+        const tokenDecimals = getTokenDecimals();
+        const divisor = Math.pow(10, tokenDecimals);
         blockchainStatus = {
           healthy: true,
           walletAddress: getWalletAddress(),
           ethBalance: (Number(ethBalance) / 1e18).toFixed(4) + ' ETH',
-          tokenBalance: (Number(tokenBalance) / 1e18).toLocaleString() + ' AQUARI',
+          tokenBalance: (Number(tokenBalance) / divisor).toLocaleString() + ' ' + getTokenSymbol(),
           gasPrice: (Number(gasPrices.current) / 1e9).toFixed(2) + ' gwei',
         };
       } catch {

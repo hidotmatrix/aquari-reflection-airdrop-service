@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { getConfig, getActiveNetwork, getRpcUrl, getDisperseAddress, getTokenAddress } from '../config/env';
+import { getConfig, getActiveNetwork, getRpcUrl, getDisperseAddress, getTokenAddress, getTokenSymbol, getTokenDecimals } from '../config/env';
 import { logger } from '../utils/logger';
 import { BatchRecipient, BatchExecution } from '../models';
 import { getGasPrices, isGasAcceptable, estimateAirdropCost, waitForAcceptableGas } from '../utils/gas-oracle';
@@ -243,7 +243,7 @@ export async function executeBatchAirdrop(
   const totalAmount = amounts.reduce((a, b) => a + b, 0n);
 
   logger.info(
-    `Executing batch airdrop: ${recipients.length} recipients, total: ${totalAmount} AQUARI`
+    `Executing batch airdrop: ${recipients.length} recipients, total: ${totalAmount} ${getTokenSymbol()}`
   );
 
   // Ensure we have sufficient token balance
@@ -431,13 +431,15 @@ export async function runPreFlightChecks(
 ): Promise<PreFlightCheckResult> {
   const config = getConfig();
 
+  const tokenSymbol = getTokenSymbol();
+
   // Mock mode - always passes
   if (config.MOCK_TRANSACTIONS) {
     return {
       passed: true,
       checks: {
         ethBalance: { passed: true, message: 'Mock mode - skipped', value: '10 ETH' },
-        tokenBalance: { passed: true, message: 'Mock mode - skipped', value: '100,000 AQUARI' },
+        tokenBalance: { passed: true, message: 'Mock mode - skipped', value: `100,000 ${tokenSymbol}` },
         gasPrice: { passed: true, message: 'Mock mode - skipped', value: '1 gwei' },
         allowance: { passed: true, message: 'Mock mode - skipped', value: 'Unlimited' },
       },
@@ -473,12 +475,14 @@ export async function runPreFlightChecks(
 
   // Check token balance
   const tokenBalanceBigInt = BigInt(tokenBalance);
+  const tokenDecimals = getTokenDecimals();
+  const divisor = Math.pow(10, tokenDecimals);
   checks.tokenBalance = {
     passed: tokenBalanceBigInt >= totalTokenAmount,
     message: tokenBalanceBigInt >= totalTokenAmount
       ? 'Sufficient token balance'
-      : `Insufficient tokens: have ${(Number(tokenBalanceBigInt) / 1e18).toLocaleString()}, need ${(Number(totalTokenAmount) / 1e18).toLocaleString()}`,
-    value: `${(Number(tokenBalanceBigInt) / 1e18).toLocaleString()} AQUARI`,
+      : `Insufficient tokens: have ${(Number(tokenBalanceBigInt) / divisor).toLocaleString()}, need ${(Number(totalTokenAmount) / divisor).toLocaleString()}`,
+    value: `${(Number(tokenBalanceBigInt) / divisor).toLocaleString()} ${tokenSymbol}`,
   };
 
   // Check gas price

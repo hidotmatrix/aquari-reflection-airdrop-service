@@ -12,11 +12,15 @@ jest.mock('../../src/config/env', () => ({
     chainId: 8453,
     chainName: 'Base',
     tokenAddress: '0x7F0E9971D3320521Fc88F863E173a4cddBB051bA',
+    tokenSymbol: 'AQUARI',
+    tokenDecimals: 18,
     disperseAddress: '0xD152f549545093347A162Dce210e7293f1452150',
   }),
   getRpcUrl: () => 'http://localhost:8545',
   getDisperseAddress: () => '0xD152f549545093347A162Dce210e7293f1452150',
   getTokenAddress: () => '0x7F0E9971D3320521Fc88F863E173a4cddBB051bA',
+  getTokenSymbol: () => 'AQUARI',
+  getTokenDecimals: () => 18,
 }));
 
 jest.mock('../../src/utils/logger', () => ({

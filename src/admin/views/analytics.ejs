@@ -1,0 +1,153 @@
+<!-- Analytics Header -->
+<div class="flex justify-between items-center mb-6">
+  <div>
+    <h1 class="text-xl font-semibold text-white">Analytics</h1>
+    <p class="text-gray-500 text-sm">Performance metrics and exports</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/admin/analytics/export/summary" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs rounded border border-dark-500 transition-colors">
+      Export Summary
+    </a>
+    <a href="/admin/analytics/export/gas" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-gray-300 text-xs rounded border border-dark-500 transition-colors">
+      Export Gas
+    </a>
+  </div>
+</div>
+
+<!-- Stats Grid -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+  <div class="bg-dark-700 border border-dark-500 rounded-lg p-4">
+    <p class="text-gray-500 text-xs uppercase">Distributions</p>
+    <p class="text-xl font-semibold text-white"><%= totalDistributions %></p>
+    <p class="text-xs text-emerald-400"><%= completedDistributions %> completed</p>
+  </div>
+  <div class="bg-dark-700 border border-dark-500 rounded-lg p-4">
+    <p class="text-gray-500 text-xs uppercase">Recipients</p>
+    <p class="text-xl font-semibold text-white"><%= totalRecipients.toLocaleString() %></p>
+  </div>
+  <div class="bg-dark-700 border border-dark-500 rounded-lg p-4">
+    <p class="text-gray-500 text-xs uppercase">Distributed</p>
+    <p class="text-xl font-semibold text-emerald-400"><%= totalDistributed %></p>
+    <p class="text-xs text-gray-500">AQUARI</p>
+  </div>
+  <div class="bg-dark-700 border border-dark-500 rounded-lg p-4">
+    <p class="text-gray-500 text-xs uppercase">Avg Gas/Recipient</p>
+    <p class="text-xl font-semibold text-white"><%= avgGasPerRecipient.toLocaleString() %></p>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+  <!-- Distribution Chart -->
+  <div class="bg-dark-700 border border-dark-500 rounded-lg p-4">
+    <div class="flex justify-between items-center mb-3">
+      <h3 class="text-sm font-medium text-white">Distribution History</h3>
+      <select id="distChartType" class="bg-dark-600 border border-dark-500 text-gray-400 text-xs rounded px-2 py-1">
+        <option value="recipients">Recipients</option>
+        <option value="distributed">Distributed</option>
+      </select>
+    </div>
+    <div style="height: 180px;">
+      <canvas id="distChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Holder Growth Chart -->
+  <div class="bg-dark-700 border border-dark-500 rounded-lg p-4">
+    <h3 class="text-sm font-medium text-white mb-3">Holder Growth</h3>
+    <div style="height: 180px;">
+      <canvas id="holderChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Gas Stats -->
+<div class="bg-dark-700 border border-dark-500 rounded-lg p-4 mb-6">
+  <h3 class="text-sm font-medium text-white mb-3">Gas Usage</h3>
+  <div class="grid grid-cols-3 gap-4">
+    <div class="text-center">
+      <p class="text-gray-500 text-xs">Total Gas</p>
+      <p class="text-lg font-mono text-white"><%= parseInt(totalGasUsed).toLocaleString() %></p>
+    </div>
+    <div class="text-center">
+      <p class="text-gray-500 text-xs">Avg per Batch</p>
+      <p class="text-lg font-mono text-white"><%= avgGasPerBatch.toLocaleString() %></p>
+    </div>
+    <div class="text-center">
+      <p class="text-gray-500 text-xs">Total Batches</p>
+      <p class="text-lg font-mono text-white"><%= totalBatches %></p>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Links -->
+<div class="bg-dark-700 border border-dark-500 rounded-lg p-4">
+  <h3 class="text-sm font-medium text-white mb-3">Export Data</h3>
+  <p class="text-xs text-gray-500 mb-3">Export individual distribution/snapshot data from their detail pages.</p>
+  <div class="flex gap-2">
+    <a href="/admin/distributions" class="text-xs text-cyan-400 hover:text-cyan-300">Distributions →</a>
+    <a href="/admin/snapshots" class="text-xs text-cyan-400 hover:text-cyan-300">Snapshots →</a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  const chartData = <%- chartData %>;
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { size: 10 } } },
+      y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { size: 10 } } }
+    }
+  };
+
+  // Distribution Chart
+  const distCtx = document.getElementById('distChart').getContext('2d');
+  const distChart = new Chart(distCtx, {
+    type: 'bar',
+    data: {
+      labels: chartData.distributions.map(d => d.weekId),
+      datasets: [{
+        data: chartData.distributions.map(d => d.eligibleHolders),
+        backgroundColor: 'rgba(34, 211, 238, 0.3)',
+        borderColor: 'rgb(34, 211, 238)',
+        borderWidth: 1,
+      }]
+    },
+    options: chartOptions
+  });
+
+  document.getElementById('distChartType').addEventListener('change', function(e) {
+    if (e.target.value === 'recipients') {
+      distChart.data.datasets[0].data = chartData.distributions.map(d => d.eligibleHolders);
+      distChart.data.datasets[0].backgroundColor = 'rgba(34, 211, 238, 0.3)';
+      distChart.data.datasets[0].borderColor = 'rgb(34, 211, 238)';
+    } else {
+      distChart.data.datasets[0].data = chartData.distributions.map(d => d.distributed);
+      distChart.data.datasets[0].backgroundColor = 'rgba(52, 211, 153, 0.3)';
+      distChart.data.datasets[0].borderColor = 'rgb(52, 211, 153)';
+    }
+    distChart.update();
+  });
+
+  // Holder Chart
+  const holderCtx = document.getElementById('holderChart').getContext('2d');
+  new Chart(holderCtx, {
+    type: 'line',
+    data: {
+      labels: chartData.holderGrowth.map(h => h.weekId),
+      datasets: [{
+        data: chartData.holderGrowth.map(h => h.totalHolders),
+        fill: true,
+        backgroundColor: 'rgba(52, 211, 153, 0.2)',
+        borderColor: 'rgb(52, 211, 153)',
+        tension: 0.3,
+        pointRadius: 2,
+      }]
+    },
+    options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, beginAtZero: false } } }
+  });
+</script>

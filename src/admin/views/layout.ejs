@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof title !== 'undefined' ? title + ' - ' : '' %>AQUARI Airdrop</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            dark: { 900: '#0a0f1a', 800: '#111827', 700: '#1a2332', 600: '#243044', 500: '#2d3a4f' }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-dark-900 min-h-screen text-gray-100">
+  <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
+  <!-- Nav -->
+  <nav class="bg-dark-800 border-b border-dark-600">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="flex justify-between h-14">
+        <div class="flex items-center space-x-8">
+          <a href="/admin/dashboard" class="flex items-center space-x-2">
+            <div class="w-7 h-7 bg-gradient-to-br from-cyan-400 to-emerald-400 rounded-lg flex items-center justify-center">
+              <span class="text-dark-900 font-bold text-xs">AQ</span>
+            </div>
+            <span class="font-semibold text-white">AQUARI</span>
+          </a>
+          <div class="hidden md:flex space-x-1 text-sm">
+            <a href="/admin/dashboard" class="px-3 py-1.5 rounded text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">Dashboard</a>
+            <a href="/admin/snapshots" class="px-3 py-1.5 rounded text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">Snapshots</a>
+            <a href="/admin/distributions" class="px-3 py-1.5 rounded text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">Distributions</a>
+            <a href="/admin/recipients" class="px-3 py-1.5 rounded text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">Recipients</a>
+            <a href="/admin/batches" class="px-3 py-1.5 rounded text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">Batches</a>
+            <a href="/admin/search" class="px-3 py-1.5 rounded text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">Search</a>
+            <a href="/admin/analytics" class="px-3 py-1.5 rounded text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">Analytics</a>
+          </div>
+        </div>
+        <div class="flex items-center space-x-4 text-sm">
+          <% if (typeof mockMode !== 'undefined' && mockMode) { %>
+          <span class="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded text-xs">MOCK</span>
+          <% } %>
+          <span class="text-gray-500"><%= typeof user !== 'undefined' && user ? user.username : '' %></span>
+          <a href="/admin/logout" class="text-gray-500 hover:text-red-400 transition-colors">Logout</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+  <% } %>
+
+  <main class="max-w-6xl mx-auto py-8 px-6">
+    <%- body %>
+  </main>
+
+  <footer class="py-6 text-center text-gray-600 text-xs">
+    AQUARI Weekly Airdrop System v1.0
+  </footer>
+
+  <%- typeof script !== 'undefined' ? script : '' %>
+</body>
+</html>

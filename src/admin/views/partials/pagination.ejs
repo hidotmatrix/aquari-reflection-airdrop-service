@@ -1,0 +1,16 @@
+<% if (pagination && pagination.totalPages > 1) { %>
+<div class="flex items-center justify-between mt-4 px-4 py-3 bg-dark-700 border border-dark-500 rounded-lg">
+  <div class="text-sm text-gray-500">
+    Showing <%= ((pagination.page - 1) * pagination.limit) + 1 %> to <%= Math.min(pagination.page * pagination.limit, pagination.total) %> of <%= pagination.total %>
+  </div>
+  <div class="flex gap-2">
+    <% if (pagination.hasPrev) { %>
+    <a href="?page=<%= pagination.page - 1 %>" class="px-3 py-1 text-sm bg-dark-600 text-gray-300 rounded hover:bg-dark-500 transition-colors">Previous</a>
+    <% } %>
+    <span class="px-3 py-1 text-sm bg-cyan-500 text-white rounded"><%= pagination.page %></span>
+    <% if (pagination.hasNext) { %>
+    <a href="?page=<%= pagination.page + 1 %>" class="px-3 py-1 text-sm bg-dark-600 text-gray-300 rounded hover:bg-dark-500 transition-colors">Next</a>
+    <% } %>
+  </div>
+</div>
+<% } %>

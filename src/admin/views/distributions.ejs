@@ -1,0 +1,60 @@
+<div class="mb-8">
+  <h1 class="text-2xl font-semibold text-white">Distributions</h1>
+  <p class="text-gray-500 text-sm mt-1">Weekly reward distributions</p>
+</div>
+
+<div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
+  <table class="w-full">
+    <thead>
+      <tr class="bg-dark-800/50">
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Eligible</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward Pool</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+        <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-dark-600">
+      <% distributions.forEach(d => { %>
+      <tr class="hover:bg-dark-600/30 transition-colors">
+        <td class="px-5 py-3 font-mono text-sm text-white"><%= d.weekId %></td>
+        <td class="px-5 py-3">
+          <span class="px-2 py-0.5 text-xs rounded-full
+            <%= d.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+               d.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+               d.status === 'ready' ? 'bg-cyan-500/20 text-cyan-400' :
+               'bg-yellow-500/20 text-yellow-400' %>">
+            <%= d.status %>
+          </span>
+        </td>
+        <td class="px-5 py-3 text-sm text-gray-300"><%= d.stats?.eligibleHolders?.toLocaleString() || 0 %></td>
+        <td class="px-5 py-3 text-sm">
+          <% if (d.config?.rewardPool && /^\d+$/.test(d.config.rewardPool) && BigInt(d.config.rewardPool) > 0n) { %>
+          <span class="text-emerald-400 font-mono"><%= (BigInt(d.config.rewardPool) / BigInt(10**18)).toString() %> <%= d.config.rewardToken || 'ETH' %></span>
+          <% } else { %>
+          <span class="text-yellow-400">TBD</span>
+          <% } %>
+        </td>
+        <td class="px-5 py-3 text-sm text-gray-500"><%= new Date(d.createdAt).toLocaleDateString() %></td>
+        <td class="px-5 py-3">
+          <a href="/admin/distributions/<%= d._id %>" class="text-sm text-cyan-400 hover:text-cyan-300">View →</a>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (distributions.length === 0) { %>
+      <tr>
+        <td colspan="6" class="px-5 py-8 text-center text-gray-500 text-sm">No distributions yet</td>
+      </tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<% if (pagination.totalPages > 1) { %>
+<div class="mt-4 flex justify-center gap-2">
+  <% for (let i = 1; i <= pagination.totalPages; i++) { %>
+  <a href="?page=<%= i %>" class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>"><%= i %></a>
+  <% } %>
+</div>
+<% } %>

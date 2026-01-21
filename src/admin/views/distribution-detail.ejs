@@ -1,0 +1,616 @@
+<div class="mb-6">
+  <a href="/admin/distributions" class="text-cyan-400 hover:text-cyan-300 text-sm">&larr; Back to Distributions</a>
+</div>
+
+<!-- Header with Week ID -->
+<div class="bg-dark-700 border border-dark-500 rounded-xl p-5 mb-6">
+  <div class="flex justify-between items-start mb-6">
+    <div>
+      <h1 class="text-xl font-semibold text-white mb-1">Distribution: <span class="font-mono text-cyan-400"><%= distribution.weekId %></span></h1>
+      <p class="text-gray-500 text-sm">Created <%= new Date(distribution.createdAt).toLocaleString() %></p>
+    </div>
+    <span class="px-3 py-1 text-sm rounded-full
+      <%= distribution.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+         distribution.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+         distribution.status === 'ready' ? 'bg-cyan-500/20 text-cyan-400' :
+         distribution.status === 'processing' ? 'bg-purple-500/20 text-purple-400' :
+         'bg-yellow-500/20 text-yellow-400' %>">
+      <%= distribution.status %>
+    </span>
+  </div>
+
+  <!-- Flow Steps -->
+  <div class="mb-6">
+    <h3 class="text-sm font-medium text-gray-400 mb-3">Distribution Flow</h3>
+    <div class="flex items-center gap-2">
+      <% const steps = [
+        { num: 1, label: 'Start Snapshot', done: currentStep > 1 },
+        { num: 2, label: 'End Snapshot', done: currentStep > 2 },
+        { num: 3, label: 'Calculate', done: currentStep > 3 },
+        { num: 4, label: 'Simulate/Execute', done: currentStep > 4 },
+        { num: 5, label: 'Completed', done: currentStep === 5 }
+      ]; %>
+      <% steps.forEach((step, idx) => { %>
+        <div class="flex items-center">
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg <%= step.done ? 'bg-emerald-500/20' : (currentStep === step.num ? 'bg-cyan-500/20' : 'bg-dark-600') %>">
+            <div class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium
+              <%= step.done ? 'bg-emerald-500 text-white' : (currentStep === step.num ? 'bg-cyan-500 text-white' : 'bg-dark-500 text-gray-400') %>">
+              <% if (step.done) { %>✓<% } else { %><%= step.num %><% } %>
+            </div>
+            <span class="text-xs <%= step.done ? 'text-emerald-400' : (currentStep === step.num ? 'text-cyan-400' : 'text-gray-500') %>"><%= step.label %></span>
+          </div>
+          <% if (idx < steps.length - 1) { %>
+            <div class="w-4 h-0.5 <%= step.done ? 'bg-emerald-500/50' : 'bg-dark-500' %>"></div>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <!-- Snapshot Stats Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Start Snapshot -->
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-2 h-2 rounded-full <%= startSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">Start Snapshot</h4>
+      </div>
+      <% if (startSnapshot) { %>
+        <div class="space-y-2">
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Holders</span>
+            <span class="text-sm font-mono text-white"><%= startSnapshot.totalHolders?.toLocaleString() || 0 %></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Total Balance</span>
+            <span class="text-xs font-mono text-gray-400"><%= startSnapshot.totalBalance && /^\d+$/.test(startSnapshot.totalBalance) ? (BigInt(startSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Status</span>
+            <span class="text-xs <%= startSnapshot.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400' %>"><%= startSnapshot.status %></span>
+          </div>
+        </div>
+      <% } else { %>
+        <p class="text-gray-500 text-sm">Not taken yet</p>
+      <% } %>
+    </div>
+
+    <!-- End Snapshot -->
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-2 h-2 rounded-full <%= endSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">End Snapshot</h4>
+      </div>
+      <% if (endSnapshot) { %>
+        <div class="space-y-2">
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Holders</span>
+            <span class="text-sm font-mono text-white"><%= endSnapshot.totalHolders?.toLocaleString() || 0 %></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Total Balance</span>
+            <span class="text-xs font-mono text-gray-400"><%= endSnapshot.totalBalance && /^\d+$/.test(endSnapshot.totalBalance) ? (BigInt(endSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Status</span>
+            <span class="text-xs <%= endSnapshot.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400' %>"><%= endSnapshot.status %></span>
+          </div>
+        </div>
+      <% } else { %>
+        <p class="text-gray-500 text-sm">Not taken yet</p>
+      <% } %>
+    </div>
+
+    <!-- Distribution Summary -->
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-2 h-2 rounded-full <%= distribution.stats?.eligibleHolders ? 'bg-emerald-400' : 'bg-gray-500' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">Distribution Summary</h4>
+      </div>
+      <div class="space-y-2">
+        <div class="flex justify-between">
+          <span class="text-xs text-gray-500">Eligible</span>
+          <span class="text-sm font-mono text-emerald-400"><%= distribution.stats?.eligibleHolders?.toLocaleString() || 0 %></span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-xs text-gray-500">Excluded</span>
+          <span class="text-sm font-mono text-red-400"><%= distribution.stats?.excludedHolders?.toLocaleString() || 0 %></span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-xs text-gray-500">Reward Pool</span>
+          <% if (distribution.config?.rewardPool && /^\d+$/.test(distribution.config.rewardPool) && BigInt(distribution.config.rewardPool) > 0n) { %>
+          <span class="text-xs font-mono text-cyan-400"><%= (BigInt(distribution.config.rewardPool) / BigInt(10**18)).toString() %> <%= distribution.config?.rewardToken || 'ETH' %></span>
+          <% } else { %>
+          <span class="text-xs text-yellow-400">TBD</span>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Action Section -->
+<% if (distribution.status === 'ready' && recipients.length > 0) { %>
+<div class="bg-dark-700 border border-emerald-500/30 rounded-xl p-5 mb-6">
+  <div class="flex justify-between items-start mb-4">
+    <div>
+      <h2 class="text-base font-medium text-white">Ready for Airdrop</h2>
+      <p class="text-gray-500 text-xs mt-1">Review and approve distribution to <%= distribution.stats?.eligibleHolders?.toLocaleString() || 0 %> recipients</p>
+    </div>
+    <div class="flex gap-3">
+      <button onclick="simulateAirdrop()" id="btnSimulate"
+        class="px-4 py-2 bg-dark-600 hover:bg-dark-500 text-gray-200 text-sm rounded-lg border border-dark-500 transition-colors disabled:opacity-50">
+        Preview Transactions
+      </button>
+      <button onclick="showApprovalModal()" id="btnApprove"
+        class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
+        Approve & Execute Airdrop
+      </button>
+    </div>
+  </div>
+
+  <!-- Simulation Results (hidden by default) -->
+  <div id="simulationResults" class="hidden mt-4">
+    <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
+      <h4 class="text-sm font-medium text-gray-300 mb-3">Simulation Preview</h4>
+      <div id="simulationContent" class="space-y-2 max-h-64 overflow-y-auto font-mono text-xs">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<!-- Retry Section for Failed/Processing Distributions -->
+<%
+  const completedBatches = batchStats.find(s => s._id === 'completed')?.count || 0;
+  const failedBatchCount = batchStats.find(s => s._id === 'failed')?.count || 0;
+  const pendingBatchCount = batchStats.find(s => s._id === 'pending')?.count || 0;
+  const processingBatchCount = batchStats.find(s => s._id === 'processing')?.count || 0;
+  const totalBatches = batches?.length || 0;
+  const hasFailedBatches = failedBatchCount > 0;
+  const hasPendingBatches = pendingBatchCount > 0 || processingBatchCount > 0;
+  const canRetry = (distribution.status === 'failed' || distribution.status === 'processing') && (hasFailedBatches || hasPendingBatches);
+%>
+<% if (canRetry) { %>
+<div class="bg-dark-700 border border-red-500/30 rounded-xl p-5 mb-6">
+  <div class="flex justify-between items-start mb-4">
+    <div>
+      <h2 class="text-base font-medium text-white flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
+        Airdrop Incomplete
+      </h2>
+      <p class="text-gray-500 text-xs mt-1">
+        <%= completedBatches %> of <%= totalBatches %> batches completed.
+        <% if (hasFailedBatches) { %><span class="text-red-400"><%= failedBatchCount %> failed.</span><% } %>
+        <% if (hasPendingBatches) { %><span class="text-yellow-400"><%= pendingBatchCount + processingBatchCount %> pending.</span><% } %>
+      </p>
+    </div>
+    <div class="flex gap-3">
+      <button onclick="retryAirdrop(false)" id="btnRetry"
+        class="px-4 py-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
+        Retry Failed Batches
+      </button>
+      <% if (hasFailedBatches) { %>
+      <button onclick="retryAirdrop(true)" id="btnRetryReset"
+        class="px-4 py-2 bg-dark-600 hover:bg-dark-500 text-gray-200 text-sm rounded-lg border border-dark-500 transition-colors disabled:opacity-50"
+        title="Reset retry counters and try again">
+        Reset & Retry All
+      </button>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- Progress Bar -->
+  <div class="mb-4">
+    <div class="flex justify-between text-xs text-gray-500 mb-1">
+      <span>Progress</span>
+      <span><%= completedBatches %>/<%= totalBatches %> batches (<%= totalBatches > 0 ? Math.round(completedBatches / totalBatches * 100) : 0 %>%)</span>
+    </div>
+    <div class="w-full h-2 bg-dark-800 rounded-full overflow-hidden">
+      <div class="h-full flex">
+        <div class="bg-emerald-500 transition-all" style="width: <%= totalBatches > 0 ? (completedBatches / totalBatches * 100) : 0 %>%"></div>
+        <div class="bg-red-500 transition-all" style="width: <%= totalBatches > 0 ? (failedBatchCount / totalBatches * 100) : 0 %>%"></div>
+        <div class="bg-yellow-500 transition-all" style="width: <%= totalBatches > 0 ? ((pendingBatchCount + processingBatchCount) / totalBatches * 100) : 0 %>%"></div>
+      </div>
+    </div>
+    <div class="flex gap-4 mt-2 text-xs">
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Completed (<%= completedBatches %>)</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> Failed (<%= failedBatchCount %>)</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-yellow-500"></span> Pending (<%= pendingBatchCount + processingBatchCount %>)</span>
+    </div>
+  </div>
+
+  <!-- Double Airdrop Prevention Notice -->
+  <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-xs">
+    <strong class="text-emerald-400">Double-Airdrop Prevention:</strong>
+    <span class="text-gray-400">Completed batches are skipped on retry. Only failed and pending batches will be processed.</span>
+  </div>
+</div>
+<% } %>
+
+<!-- Batch Stats -->
+<% if (batchStats && batchStats.length > 0) { %>
+<div class="bg-dark-700 border border-dark-500 rounded-xl p-5 mb-6">
+  <h2 class="text-base font-medium text-white mb-3">Batches</h2>
+  <div class="flex flex-wrap gap-3">
+    <% batchStats.forEach(s => { %>
+    <div class="bg-dark-800/50 rounded-lg px-4 py-2 border border-dark-600">
+      <span class="text-xs text-gray-500 block"><%= s._id %></span>
+      <span class="text-lg font-semibold <%= s._id === 'completed' ? 'text-emerald-400' :
+         s._id === 'failed' ? 'text-red-400' :
+         s._id === 'processing' ? 'text-cyan-400' :
+         'text-yellow-400' %>"><%= s.count %></span>
+    </div>
+    <% }) %>
+    <div class="bg-dark-800/50 rounded-lg px-4 py-2 border border-dark-600">
+      <span class="text-xs text-gray-500 block">Total Batches</span>
+      <span class="text-lg font-semibold text-white"><%= batches?.length || 0 %></span>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<!-- Recipients Table -->
+<div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
+  <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
+    <h2 class="text-base font-medium text-white">Recipients <span class="text-gray-500 text-sm font-normal">(Top by Reward)</span></h2>
+    <span class="text-xs text-gray-500"><%= pagination.total?.toLocaleString() || 0 %> total</span>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full">
+      <thead>
+        <tr class="bg-dark-800/50">
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">MIN Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">TxHash</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-dark-600">
+        <% recipients.forEach(r => { %>
+        <tr class="hover:bg-dark-600/30 transition-colors">
+          <td class="px-5 py-3">
+            <a href="https://basescan.org/token/<%= aquariAddress %>?a=<%= r.address %>"
+               target="_blank"
+               class="font-mono text-sm text-cyan-400 hover:text-cyan-300 hover:underline"
+               title="View on Basescan with AQUARI holdings">
+              <%= r.address.slice(0,6) %>...<%= r.address.slice(-4) %>
+              <svg class="inline w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+            </a>
+          </td>
+          <td class="px-5 py-3 text-sm text-gray-400 font-mono">
+            <%= r.balances?.start && /^\d+$/.test(r.balances.start) ? (BigInt(r.balances.start) / BigInt(10**18)).toLocaleString() : '—' %>
+          </td>
+          <td class="px-5 py-3 text-sm text-gray-400 font-mono">
+            <%= r.balances?.end && /^\d+$/.test(r.balances.end) ? (BigInt(r.balances.end) / BigInt(10**18)).toLocaleString() : '—' %>
+          </td>
+          <td class="px-5 py-3 text-sm text-white font-mono font-medium">
+            <%= r.balances?.min && /^\d+$/.test(r.balances.min) ? (BigInt(r.balances.min) / BigInt(10**18)).toLocaleString() : '—' %>
+          </td>
+          <td class="px-5 py-3 text-sm text-emerald-400 font-mono font-medium"><%= r.rewardFormatted || '—' %></td>
+          <td class="px-5 py-3">
+            <span class="px-2 py-0.5 text-xs rounded-full
+              <%= r.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+                 r.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                 r.status === 'processing' ? 'bg-cyan-500/20 text-cyan-400' :
+                 'bg-yellow-500/20 text-yellow-400' %>">
+              <%= r.status %>
+            </span>
+          </td>
+          <td class="px-5 py-3">
+            <% if (r.txHash) { %>
+              <a href="https://basescan.org/tx/<%= r.txHash %>"
+                 target="_blank"
+                 class="font-mono text-xs text-gray-500 hover:text-cyan-400">
+                <%= r.txHash.slice(0,8) %>...
+              </a>
+            <% } else { %>
+              <span class="text-gray-600">—</span>
+            <% } %>
+          </td>
+        </tr>
+        <% }) %>
+        <% if (recipients.length === 0) { %>
+        <tr>
+          <td colspan="7" class="px-5 py-8 text-center text-gray-500 text-sm">No recipients found</td>
+        </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+<% if (pagination.totalPages > 1) { %>
+<div class="mt-4 flex justify-center gap-2">
+  <% if (pagination.page > 1) { %>
+    <a href="?page=<%= pagination.page - 1 %>" class="px-3 py-1 text-sm rounded bg-dark-700 text-gray-400 hover:text-white">&larr;</a>
+  <% } %>
+  <%
+    let startPage = Math.max(1, pagination.page - 2);
+    let endPage = Math.min(pagination.totalPages, pagination.page + 2);
+  %>
+  <% for (let i = startPage; i <= endPage; i++) { %>
+    <a href="?page=<%= i %>" class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>"><%= i %></a>
+  <% } %>
+  <% if (pagination.page < pagination.totalPages) { %>
+    <a href="?page=<%= pagination.page + 1 %>" class="px-3 py-1 text-sm rounded bg-dark-700 text-gray-400 hover:text-white">&rarr;</a>
+  <% } %>
+</div>
+<% } %>
+
+<!-- Approval Modal -->
+<div id="approvalModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-dark-700 border border-dark-500 rounded-2xl w-full max-w-md shadow-2xl">
+    <!-- Modal Header -->
+    <div class="px-6 py-4 border-b border-dark-500">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-white">Approve Airdrop</h3>
+        <button onclick="closeApprovalModal()" class="text-gray-500 hover:text-white transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal Body -->
+    <div class="px-6 py-5">
+      <!-- Week Info -->
+      <div class="bg-dark-800 rounded-lg p-4 mb-5">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-gray-500 text-sm">Week</span>
+          <span class="font-mono text-cyan-400"><%= distribution.weekId %></span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-gray-500 text-sm">Eligible Holders</span>
+          <span class="text-white font-medium"><%= distribution.stats?.eligibleHolders?.toLocaleString() || 0 %></span>
+        </div>
+      </div>
+
+      <!-- Reward Input -->
+      <div class="mb-5">
+        <label class="block text-sm font-medium text-gray-300 mb-2">
+          Reward Pool Amount <span class="text-red-400">*</span>
+        </label>
+        <div class="flex">
+          <input type="number" id="modalRewardAmount" step="0.001" min="0.001" placeholder="Enter amount to distribute"
+            class="flex-1 bg-dark-800 border border-dark-500 text-white text-lg font-mono rounded-l-lg px-4 py-3 focus:border-cyan-500 focus:outline-none"
+            oninput="updatePerHolderEstimate()"
+            required
+            value="<%= distribution.config?.rewardPool && /^\d+$/.test(distribution.config.rewardPool) && BigInt(distribution.config.rewardPool) > 0n ? (BigInt(distribution.config.rewardPool) / BigInt(10**18)).toString() : '' %>">
+          <select id="modalRewardToken"
+            onchange="updatePerHolderEstimate()"
+            class="bg-dark-600 border border-dark-500 border-l-0 text-white text-sm font-medium rounded-r-lg px-4 py-3 focus:outline-none">
+            <option value="ETH" <%= (distribution.config?.rewardToken || 'ETH') === 'ETH' ? 'selected' : '' %>>ETH</option>
+            <option value="USDC" <%= distribution.config?.rewardToken === 'USDC' ? 'selected' : '' %>>USDC</option>
+            <option value="AQUARI" <%= distribution.config?.rewardToken === 'AQUARI' ? 'selected' : '' %>>AQUARI</option>
+          </select>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">Enter the total amount to distribute proportionally to all eligible holders</p>
+      </div>
+
+      <!-- Summary -->
+      <div id="rewardSummary" class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 hidden">
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400 text-sm">Estimated per holder</span>
+          <span id="perHolderAmount" class="text-emerald-400 font-mono">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="px-6 py-4 border-t border-dark-500 flex gap-3">
+      <button onclick="closeApprovalModal()"
+        class="flex-1 px-4 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm font-medium rounded-lg transition-colors">
+        Cancel
+      </button>
+      <button onclick="confirmApproval()" id="btnConfirmApproval"
+        class="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
+        Start Airdrop
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const distributionId = '<%= distribution._id %>';
+  const weekId = '<%= distribution.weekId %>';
+  const eligibleHolders = <%= distribution.stats?.eligibleHolders || 0 %>;
+  const defaultRewardPool = '<%= distribution.config?.rewardPool && /^\d+$/.test(distribution.config.rewardPool) && BigInt(distribution.config.rewardPool) > 0n ? (BigInt(distribution.config.rewardPool) / BigInt(10**18)).toString() : "" %>';
+  const defaultRewardToken = '<%= distribution.config?.rewardToken || "ETH" %>';
+  const isSimulated = <%= typeof mockTransactions !== 'undefined' ? mockTransactions : true %>;
+
+  const recipients = <%- JSON.stringify(recipients.map(r => ({
+    address: r.address,
+    reward: r.reward,
+    rewardFormatted: r.rewardFormatted,
+    status: r.status
+  }))) %>;
+
+  function showApprovalModal() {
+    document.getElementById('approvalModal').classList.remove('hidden');
+    document.getElementById('modalRewardAmount').value = defaultRewardPool;
+    updatePerHolderEstimate();
+  }
+
+  function closeApprovalModal() {
+    document.getElementById('approvalModal').classList.add('hidden');
+  }
+
+  function updatePerHolderEstimate() {
+    const amount = parseFloat(document.getElementById('modalRewardAmount').value) || 0;
+    const token = document.getElementById('modalRewardToken').value;
+
+    if (amount > 0 && eligibleHolders > 0) {
+      const perHolder = amount / eligibleHolders;
+      document.getElementById('perHolderAmount').textContent = `~${perHolder.toFixed(8)} ${token}`;
+      document.getElementById('rewardSummary').classList.remove('hidden');
+    } else {
+      document.getElementById('rewardSummary').classList.add('hidden');
+    }
+  }
+
+  async function confirmApproval() {
+    const rewardAmount = parseFloat(document.getElementById('modalRewardAmount').value);
+    const rewardToken = document.getElementById('modalRewardToken').value;
+
+    if (!rewardAmount || rewardAmount <= 0) {
+      alert('Please enter a valid reward amount');
+      return;
+    }
+
+    // Production mode double confirmation
+    if (!isSimulated) {
+      if (!confirm(`⚠️ PRODUCTION MODE ⚠️\n\nYou are about to distribute ${rewardAmount} ${rewardToken} to ${eligibleHolders} holders.\n\nThis action CANNOT be undone. Continue?`)) {
+        return;
+      }
+    }
+
+    const btn = document.getElementById('btnConfirmApproval');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    try {
+      // Convert to wei (18 decimals)
+      const rewardPoolWei = (BigInt(Math.floor(rewardAmount * 1e6)) * BigInt(1e12)).toString();
+
+      const res = await fetch('/admin/approve-airdrop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          distributionId,
+          rewardPool: rewardPoolWei,
+          rewardToken
+        })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        closeApprovalModal();
+        alert('Airdrop started! Mode: ' + data.mode + '\n\nRedirecting to dashboard to view progress...');
+        window.location.href = '/admin/dashboard';
+      } else {
+        alert('Error: ' + (data.error || 'Failed to start airdrop'));
+        btn.disabled = false;
+        btn.textContent = isSimulated ? 'Start Simulation' : 'Execute Airdrop';
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = isSimulated ? 'Start Simulation' : 'Execute Airdrop';
+    }
+  }
+
+  // Close modal on escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeApprovalModal();
+  });
+
+  async function retryAirdrop(resetRetryCount) {
+    const confirmMsg = resetRetryCount
+      ? 'This will reset retry counters for all failed batches and retry them.\n\nCompleted batches will NOT be re-processed (double-airdrop prevention).\n\nContinue?'
+      : 'This will retry failed and pending batches.\n\nCompleted batches will NOT be re-processed (double-airdrop prevention).\n\nContinue?';
+
+    if (!confirm(confirmMsg)) return;
+
+    const btn = resetRetryCount ? document.getElementById('btnRetryReset') : document.getElementById('btnRetry');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Retrying...';
+    }
+
+    try {
+      const res = await fetch('/admin/retry-airdrop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          distributionId,
+          resetRetryCount
+        })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        alert(`Retry started!\n\nMode: ${data.mode}\n\nStats:\n- Completed: ${data.stats.completedBatches} (skipped)\n- To process: ${data.stats.failedBatches + data.stats.pendingBatches}\n\nRefreshing page...`);
+        window.location.reload();
+      } else {
+        alert('Error: ' + (data.error || 'Failed to start retry'));
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = resetRetryCount ? 'Reset & Retry All' : 'Retry Failed Batches';
+        }
+      }
+    } catch (e) {
+      alert('Error: ' + e.message);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = resetRetryCount ? 'Reset & Retry All' : 'Retry Failed Batches';
+      }
+    }
+  }
+
+  async function simulateAirdrop() {
+    const btn = document.getElementById('btnSimulate');
+    const resultsDiv = document.getElementById('simulationResults');
+    const contentDiv = document.getElementById('simulationContent');
+
+    btn.disabled = true;
+    btn.textContent = 'Simulating...';
+
+    try {
+      // Show simulation preview
+      resultsDiv.classList.remove('hidden');
+
+      let html = '<div class="text-purple-400 mb-2">--- SIMULATION PREVIEW ---</div>';
+      html += '<div class="text-gray-500 mb-2">The following transactions would be executed:</div>';
+
+      // Group by batch
+      const batchSize = <%= distribution.config?.batchSize || 100 %>;
+      const pendingRecipients = recipients.filter(r => r.status === 'pending');
+      const batches = [];
+
+      for (let i = 0; i < pendingRecipients.length; i += batchSize) {
+        batches.push(pendingRecipients.slice(i, i + batchSize));
+      }
+
+      let totalReward = BigInt(0);
+      batches.forEach((batch, idx) => {
+        html += `<div class="mt-3 p-2 bg-dark-700 rounded">`;
+        html += `<div class="text-cyan-400 mb-1">Batch ${idx + 1} (${batch.length} recipients)</div>`;
+        batch.slice(0, 3).forEach(r => {
+          html += `<div class="text-gray-400 pl-2">→ ${r.address.slice(0,10)}...${r.address.slice(-6)}: ${r.rewardFormatted}</div>`;
+          if (r.reward) totalReward += BigInt(r.reward);
+        });
+        if (batch.length > 3) {
+          html += `<div class="text-gray-500 pl-2">... and ${batch.length - 3} more</div>`;
+        }
+        html += `</div>`;
+      });
+
+      const totalFormatted = (totalReward / BigInt(10**18)).toString();
+      html += `<div class="mt-4 pt-3 border-t border-dark-600">`;
+      html += `<div class="flex justify-between"><span class="text-gray-400">Total Batches:</span><span class="text-white">${batches.length}</span></div>`;
+      html += `<div class="flex justify-between"><span class="text-gray-400">Total Recipients:</span><span class="text-white">${pendingRecipients.length}</span></div>`;
+      html += `<div class="flex justify-between"><span class="text-gray-400">Total Rewards:</span><span class="text-emerald-400">${totalFormatted} <%= distribution.config?.rewardToken || 'ETH' %></span></div>`;
+      html += `</div>`;
+
+      html += `<div class="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-400 text-xs">`;
+      html += `<strong>Note:</strong> This is a simulation. No transactions have been sent. `;
+      html += `Real execution would require wallet connection and gas fees.`;
+      html += `</div>`;
+
+      contentDiv.innerHTML = html;
+      btn.textContent = 'Simulation Complete';
+
+    } catch (e) {
+      contentDiv.innerHTML = `<div class="text-red-400">Error: ${e.message}</div>`;
+    }
+  }
+</script>

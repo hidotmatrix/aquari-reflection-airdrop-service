@@ -1,22 +1,31 @@
 # AQUARI Weekly Airdrop System
 
-Autonomous system for distributing weekly rewards to AQUARI token holders on Base blockchain.
+Autonomous system for distributing weekly token rewards to AQUARI holders on Base blockchain.
+
+---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [How It Works](#how-it-works)
 - [Quick Start - Fork Mode (Testing)](#quick-start---fork-mode-testing)
 - [Quick Start - Production Mode](#quick-start---production-mode)
-- [Workflow](#workflow)
+- [Mode Comparison](#mode-comparison)
+- [Token Configuration](#token-configuration)
 - [Admin Dashboard](#admin-dashboard)
-- [Scripts Reference](#scripts-reference)
+- [Wallet Management](#wallet-management)
+- [API Endpoints](#api-endpoints)
 - [Environment Variables](#environment-variables)
-- [Docker Compose](#docker-compose)
+- [Database Collections](#database-collections)
+- [Scripts](#scripts)
 - [Troubleshooting](#troubleshooting)
+- [Deployment](#deployment)
 
 ---
 
 ## Overview
+
+### Tech Stack
 
 | Component | Technology |
 |-----------|------------|
@@ -24,324 +33,685 @@ Autonomous system for distributing weekly rewards to AQUARI token holders on Bas
 | Language | TypeScript |
 | Framework | Express.js |
 | Database | MongoDB |
-| Blockchain | ethers.js v6 on Base |
+| Job Queue | BullMQ + Redis |
+| Blockchain | ethers.js v6 |
+| Chain | Base Mainnet (8453) |
 | Token Data | Moralis API |
 | Admin UI | EJS + Tailwind CSS |
 
-**Key Features:**
-- Weekly snapshots of token holders via Moralis API
-- MIN balance method (prevents gaming)
-- Batch airdrops via Disperse contract (76% gas savings)
-- Bot-restricted address filtering (AQUARI antibot)
-- Admin dashboard for monitoring and control
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| Weekly Snapshots | Automatic holder snapshots via Moralis API |
+| MIN Balance Method | Anti-gaming: uses MIN(start, end) balance |
+| Batch Airdrops | 500 recipients/tx via Disperse contract (76% gas savings) |
+| Bot Filtering | Auto-excludes AQUARI antibot-restricted addresses |
+| Multi-Token Support | Switch tokens via `TOKEN_ADDRESS` env var |
+| Wallet Monitoring | Live balance display with funding warnings |
+| Analytics | Charts, metrics, CSV exports |
+| Rate Limiting | Login protection (5 attempts/15 min) |
+| Pre-flight Checks | Validates balances & gas before airdrops |
+
+### Contract Addresses
+
+| Contract | Address |
+|----------|---------|
+| AQUARI Token | `0x7F0E9971D3320521Fc88F863E173a4cddBB051bA` |
+| Disperse | `0xD152f549545093347A162Dce210e7293f1452150` |
+
+---
+
+## How It Works
+
+### The MIN Balance Anti-Gaming System
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ELIGIBILITY CALCULATION                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  For each holder:                                                │
+│                                                                  │
+│    START Balance (Week Begin)     END Balance (Week End)         │
+│           ↓                              ↓                       │
+│           └──────────┬───────────────────┘                       │
+│                      ↓                                           │
+│              MIN(START, END)                                     │
+│                      ↓                                           │
+│         Is MIN >= 1000 AQUARI?                                   │
+│                      │                                           │
+│           ┌─────────┴─────────┐                                  │
+│           ↓                   ↓                                  │
+│          YES                  NO                                 │
+│           ↓                   ↓                                  │
+│       ELIGIBLE            EXCLUDED                               │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  REWARD FORMULA:                                                 │
+│                                                                  │
+│                    Holder's MIN Balance                          │
+│  Holder Reward = ────────────────────────── × Total Reward Pool  │
+│                   Sum of ALL MIN Balances                        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Anti-Gaming Examples
+
+| Scenario | Start | End | MIN | Eligible? | Why |
+|----------|-------|-----|-----|-----------|-----|
+| Loyal Holder | 10,000 | 10,000 | 10,000 | ✅ Yes | Held full week |
+| Partial Seller | 10,000 | 5,000 | 5,000 | ✅ Yes | Credit = lower amount |
+| Accumulator | 5,000 | 15,000 | 5,000 | ✅ Yes | Credit = starting amount |
+| Last-Minute Buy | 0 | 50,000 | 0 | ❌ No | Wasn't holding at start |
+| Dumper | 10,000 | 500 | 500 | ❌ No | Below 1000 minimum |
+
+### Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    WEEKLY AIRDROP FLOW                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. START SNAPSHOT                                               │
+│     └─ Fetches all AQUARI holders via Moralis API                │
+│     └─ Stores in snapshots + holders collections                 │
+│                                                                  │
+│  2. END SNAPSHOT (1 week later, or interval in fork mode)        │
+│     └─ Fetches holders again                                     │
+│     └─ Both snapshots needed for MIN balance calculation         │
+│                                                                  │
+│  3. CALCULATE REWARDS                                            │
+│     └─ Compares START vs END balances                            │
+│     └─ Excludes: config addresses, bot-restricted addresses      │
+│     └─ Calculates: MIN(start, end) for each holder               │
+│     └─ Creates batches of 500 recipients                         │
+│                                                                  │
+│  4. APPROVE & EXECUTE AIRDROP                                    │
+│     └─ Admin enters reward pool amount                           │
+│     └─ Recalculates proportional rewards                         │
+│     └─ Executes batches via Disperse contract                    │
+│     └─ Records txHash for each batch                             │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Quick Start - Fork Mode (Testing)
 
-Fork mode uses Anvil to simulate Base mainnet locally. **No real funds are used.**
+Fork mode uses **Anvil** to simulate Base mainnet locally. **No real funds are used.** Data comes from real Moralis API, but transactions go to the local fork.
 
-### 1. Prerequisites
+### Step 1: Install Prerequisites
 
 ```bash
 # Install Foundry (for Anvil)
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
 
-# Or use Docker (recommended)
-docker compose up -d
+# Verify installation
+anvil --version
 ```
 
-### 2. Environment Setup
+### Step 2: Clone and Install
+
+```bash
+git clone <your-repo>
+cd aquari-airdrop
+npm install
+```
+
+### Step 3: Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
 Edit `.env` for fork mode:
+
 ```env
-# Mode
+# ═══════════════════════════════════════════════════════════
+# MODE - Use 'fork' for testing
+# ═══════════════════════════════════════════════════════════
 MODE=fork
 NODE_ENV=development
 
-# RPC - Use Anvil fork
+# ═══════════════════════════════════════════════════════════
+# RPC - Point to local Anvil fork
+# ═══════════════════════════════════════════════════════════
 RPC_URL=http://localhost:8545
 
-# Real Moralis data, simulated transactions
+# ═══════════════════════════════════════════════════════════
+# MOCK FLAGS
+# false = real Moralis data, real transactions (on fork)
+# ═══════════════════════════════════════════════════════════
 MOCK_SNAPSHOTS=false
 MOCK_TRANSACTIONS=false
 
-# Database (local or Docker)
+# ═══════════════════════════════════════════════════════════
+# DATABASE
+# ═══════════════════════════════════════════════════════════
 MONGODB_URI=mongodb://localhost:27017/aquari-airdrop
+REDIS_URL=redis://localhost:6379
 
-# Your Moralis API key
-MORALIS_API_KEY=your_key_here
+# ═══════════════════════════════════════════════════════════
+# MORALIS API (Required - get free key at moralis.io)
+# ═══════════════════════════════════════════════════════════
+MORALIS_API_KEY=your_moralis_api_key_here
 
-# Admin credentials
+# ═══════════════════════════════════════════════════════════
+# ADMIN DASHBOARD
+# ═══════════════════════════════════════════════════════════
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
-SESSION_SECRET=your_random_secret_here
+SESSION_SECRET=your_random_64_char_string_here_for_session_security
+
+# ═══════════════════════════════════════════════════════════
+# PRIVATE KEY - Auto-configured in fork mode (Anvil test key)
+# ═══════════════════════════════════════════════════════════
+# PRIVATE_KEY=  (leave empty for fork mode)
+
+# ═══════════════════════════════════════════════════════════
+# FORK MODE SCHEDULING
+# ═══════════════════════════════════════════════════════════
+AUTO_START=false
+SNAPSHOT_INTERVAL=10
+CALCULATE_DELAY=5
 ```
 
-### 3. Start Services
+### Step 4: Start Services
 
+**Terminal 1 - Start Anvil Fork:**
 ```bash
-# Option A: Docker (includes MongoDB, Redis, Anvil)
-docker compose up -d
-
-# Option B: Manual
-# Terminal 1 - Anvil fork
 anvil --fork-url https://mainnet.base.org --block-time 2
+```
 
-# Terminal 2 - MongoDB (if not using Docker)
+You'll see:
+```
+Available Accounts
+==================
+(0) 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 (10000 ETH)
+...
+(9) 0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199 (10000 ETH)
+
+Private Keys
+==================
+...
+(9) 0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e
+```
+
+**Terminal 2 - Start MongoDB (if not using Docker):**
+```bash
 mongod
+```
 
-# Terminal 3 - App
+**Terminal 3 - Start Redis (if not using Docker):**
+```bash
+redis-server
+```
+
+**Terminal 4 - Start Application:**
+```bash
 npm run dev
 ```
 
-### 4. Fund Test Wallet
+You'll see wallet balances logged:
+```
+═══════════════════════════════════════════════════════════
+  AQUARI Weekly Airdrop System
+═══════════════════════════════════════════════════════════
+Environment: development
+Mode: fork (FORK (Fast Cycles))
+───────────────────────────────────────────────────────────
+WALLET BALANCES:
+  ETH Balance: 10000.000000 ETH ✓
+  AQUARI Balance: 0 AQUARI ⚠️  LOW - Fund wallet with tokens to airdrop!
+```
 
-The fork mode uses Anvil's test account #9:
-- **Address:** `0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199`
-- **Private Key:** Auto-configured in fork mode
+### Step 5: Fund Test Wallet with AQUARI Tokens
 
-Fund it with AQUARI tokens:
+The fork uses Anvil's test account #9. You need to fund it with AQUARI tokens:
+
 ```bash
-# Impersonate a whale and transfer tokens
-cast rpc anvil_impersonateAccount 0xYOUR_WHALE_ADDRESS --rpc-url http://localhost:8545
+# Find a whale address (check BaseScan for large holders)
+# Example whale: 0x... (find one with lots of AQUARI)
 
-# Transfer AQUARI to test wallet
+# Impersonate the whale
+cast rpc anvil_impersonateAccount "0xWHALE_ADDRESS" --rpc-url http://localhost:8545
+
+# Transfer AQUARI to test wallet (2 million tokens)
 cast send 0x7F0E9971D3320521Fc88F863E173a4cddBB051bA \
   "transfer(address,uint256)" \
   0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199 \
   2000000000000000000000000 \
-  --from 0xYOUR_WHALE_ADDRESS \
+  --from "0xWHALE_ADDRESS" \
   --unlocked \
   --rpc-url http://localhost:8545
+
+# Stop impersonating
+cast rpc anvil_stopImpersonatingAccount "0xWHALE_ADDRESS" --rpc-url http://localhost:8545
 ```
 
-### 5. Scan for Bot-Restricted Addresses
+### Step 6: Scan Bot-Restricted Addresses
 
-**Important:** Run this before your first airdrop to prevent transaction failures.
+**Important:** Run this before your first airdrop:
 
 ```bash
 node scripts/scan-restricted.js
 ```
 
-This scans all holders and stores bot-restricted addresses in the database. They will be automatically excluded from future distributions.
+This scans all holders and stores bot-restricted addresses for automatic exclusion.
 
-### 6. Run the Workflow
+### Step 7: Run the Workflow
 
-Open admin dashboard: http://localhost:3000/admin
+Open admin dashboard: **http://localhost:3000/admin**
 
-1. **Take START Snapshot** - Click "1. Start Snapshot"
-2. **Wait** - Simulates time passing (or manually trigger)
-3. **Take END Snapshot** - Click "2. End Snapshot"
-4. **Calculate Rewards** - Click "3. Calculate"
-5. **Enter Reward Amount** - Set the AQUARI amount to distribute
-6. **Execute Airdrop** - Click "4. Execute Airdrop"
+Login with your `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
+
+**Manual Workflow:**
+1. Click **"Start Snapshot"** - Takes START snapshot
+2. Wait a few minutes (simulates time passing)
+3. Click **"End Snapshot"** - Takes END snapshot
+4. Click **"Calculate"** - Calculates eligible recipients
+5. Enter **Reward Amount** (e.g., 1000000 for 1M AQUARI)
+6. Click **"Approve & Execute"** - Executes airdrop batches
+
+### Step 8: Verify Results
+
+- Check **Distributions** page for status
+- Check **Batches** page for transaction hashes
+- Check **Recipients** page for individual rewards
+- Search any wallet address to see their history
 
 ---
 
 ## Quick Start - Production Mode
 
-Production mode runs on Base mainnet with real funds. **Use with caution.**
+Production mode runs on **Base mainnet** with **real funds**. Use with caution.
 
-### 1. Environment Setup
+### Step 1: Configure Environment
 
 ```env
-# Mode
+# ═══════════════════════════════════════════════════════════
+# MODE - Use 'production' for real airdrops
+# ═══════════════════════════════════════════════════════════
 MODE=production
 NODE_ENV=production
 
-# RPC - Base mainnet
+# ═══════════════════════════════════════════════════════════
+# RPC - Base mainnet (or your own RPC provider)
+# ═══════════════════════════════════════════════════════════
 RPC_URL=https://mainnet.base.org
-# Or use a dedicated RPC: Alchemy, Infura, etc.
 
-# Real data, real transactions
+# ═══════════════════════════════════════════════════════════
+# MOCK FLAGS - Must be false for production
+# ═══════════════════════════════════════════════════════════
 MOCK_SNAPSHOTS=false
 MOCK_TRANSACTIONS=false
 
-# Production MongoDB (use MongoDB Atlas or dedicated server)
+# ═══════════════════════════════════════════════════════════
+# DATABASE - Use MongoDB Atlas or dedicated server
+# ═══════════════════════════════════════════════════════════
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/aquari-airdrop
+REDIS_URL=redis://your-redis-server:6379
 
-# Your real airdropper wallet
-PRIVATE_KEY=your_real_private_key_here
+# ═══════════════════════════════════════════════════════════
+# MORALIS API
+# ═══════════════════════════════════════════════════════════
+MORALIS_API_KEY=your_moralis_api_key
 
-# Moralis API
-MORALIS_API_KEY=your_key_here
+# ═══════════════════════════════════════════════════════════
+# ADMIN DASHBOARD - Use strong credentials!
+# ═══════════════════════════════════════════════════════════
+ADMIN_USERNAME=your_secure_username
+ADMIN_PASSWORD=YourVerySecurePassword123!@#
+SESSION_SECRET=generate_64_random_chars_here_use_openssl_rand_hex_32
 
-# Secure admin credentials
-ADMIN_USERNAME=secure_username
-ADMIN_PASSWORD=very_secure_password_here
-SESSION_SECRET=64_char_random_string_here
+# ═══════════════════════════════════════════════════════════
+# PRIVATE KEY - Your airdrop wallet (KEEP SECRET!)
+# ═══════════════════════════════════════════════════════════
+PRIVATE_KEY=your_airdrop_wallet_private_key_here
 
-# Production batch settings
+# ═══════════════════════════════════════════════════════════
+# BATCH SETTINGS
+# ═══════════════════════════════════════════════════════════
 BATCH_SIZE=500
-CONFIRMATIONS=3
 MAX_GAS_PRICE=50000000000
+CONFIRMATIONS=3
 ```
 
-### 2. Scan Bot-Restricted Addresses
+### Step 2: Fund Airdrop Wallet
+
+Your airdrop wallet needs:
+1. **ETH** - For gas fees (minimum 0.1 ETH recommended)
+2. **AQUARI** - The tokens to airdrop
+
+### Step 3: Scan Bot-Restricted Addresses
 
 ```bash
-# Scan against Base mainnet
 node scripts/scan-restricted.js --rpc https://mainnet.base.org
 ```
 
-### 3. Deploy with Docker
+### Step 4: Deploy and Start
 
-```bash
-# Build and start
-docker compose -f docker-compose.prod.yml up -d
-
-# Or without Docker
-npm run build
-npm start
-```
-
-### 4. Weekly Schedule (Production)
-
-Production mode uses cron schedules:
-- **Sunday 23:59 UTC** - END snapshot
-- **Monday 00:30 UTC** - Calculate rewards
-- **Monday 01:00 UTC** - Manual airdrop approval required
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instructions.
 
 ---
 
-## Workflow
+## Mode Comparison
+
+### Fork Mode vs Production Mode
+
+| Aspect | Fork Mode | Production Mode |
+|--------|-----------|-----------------|
+| **Purpose** | Testing & Development | Real Airdrops |
+| **RPC** | `http://localhost:8545` (Anvil) | `https://mainnet.base.org` |
+| **Funds** | Fake (Anvil test ETH) | Real (your wallet) |
+| **Moralis Data** | Real holder data | Real holder data |
+| **Transactions** | On local fork | On Base mainnet |
+| **Private Key** | Auto (test key) | Required (your key) |
+| **Gas Cost** | None (simulated) | Real ETH |
+
+### Cron Job Schedules
+
+| Mode | Snapshot | Calculate | Airdrop |
+|------|----------|-----------|---------|
+| **Fork (Interval)** | Manual or AUTO_START | +5 min after snapshot | Manual |
+| **Fork (Cron)** | SNAPSHOT_CRON | CALCULATE_CRON | Manual |
+| **Production** | Sunday 23:59 UTC | Monday 00:30 UTC | Manual approval |
+
+### Fork Mode Scheduling Options
+
+**Option A: Manual Trigger (Recommended for Testing)**
+```env
+AUTO_START=false
+# Trigger from dashboard manually
+```
+
+**Option B: Auto-Start with Intervals**
+```env
+AUTO_START=true
+START_DELAY_MINUTES=0
+SNAPSHOT_INTERVAL=10      # Minutes between START and END snapshots
+CALCULATE_DELAY=5         # Minutes after END to calculate
+```
+
+**Option C: Cron-Based (Specific Times)**
+```env
+SNAPSHOT_CRON=30 14 * * *    # 2:30 PM daily
+CALCULATE_CRON=45 14 * * *   # 2:45 PM daily
+```
+
+### Production Mode Schedule
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    WEEKLY AIRDROP FLOW                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  1. START SNAPSHOT                                              │
-│     └─ Fetches all AQUARI holders via Moralis API              │
-│     └─ Stores in `snapshots` + `holders` collections           │
-│                                                                 │
-│  2. END SNAPSHOT (1 week later, or interval in fork mode)      │
-│     └─ Fetches holders again                                   │
-│     └─ Both snapshots needed for MIN balance calculation       │
-│                                                                 │
-│  3. CALCULATE REWARDS                                          │
-│     └─ Compares START vs END balances                          │
-│     └─ Excludes: config addresses, bot-restricted addresses    │
-│     └─ Calculates: MIN(start, end) for each holder             │
-│     └─ Creates batches of 500 recipients                       │
-│                                                                 │
-│  4. APPROVE & EXECUTE AIRDROP                                  │
-│     └─ Admin enters reward pool amount                         │
-│     └─ Recalculates proportional rewards                       │
-│     └─ Executes batches via Disperse contract                  │
-│     └─ Records txHash for each batch                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+WEEKLY CYCLE (UTC):
+───────────────────────────────────────────────────────────
+
+Sunday 23:59  →  SNAPSHOT (automatic)
+                 • Fetches all holders from Moralis
+                 • Serves as END of current week
+                 • Serves as START of next week
+
+Monday 00:30  →  CALCULATE (automatic)
+                 • Compares previous and current snapshot
+                 • Calculates eligible recipients
+                 • Creates batches
+                 • Status = "ready"
+
+Monday 01:00+ →  AIRDROP (manual approval required)
+                 • Admin sets reward pool amount
+                 • Admin clicks "Approve & Execute"
+                 • Batches executed via Disperse contract
 ```
 
-### Anti-Gaming: MIN Balance Method
+---
 
-| Scenario | Start | End | Credit | Result |
-|----------|-------|-----|--------|--------|
-| Loyal Holder | 10,000 | 10,000 | 10,000 | ✅ Full reward |
-| Partial Seller | 10,000 | 5,000 | 5,000 | ✅ Reduced reward |
-| Accumulator | 5,000 | 15,000 | 5,000 | ✅ Based on start |
-| Last-Minute Buyer | 0 | 50,000 | 0 | ❌ Not eligible |
-| Dumper | 10,000 | 500 | 0 | ❌ Below minimum |
+## Token Configuration
+
+### Default Token (AQUARI)
+
+```env
+TOKEN_ADDRESS=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
+TOKEN_SYMBOL=AQUARI
+TOKEN_DECIMALS=18
+```
+
+### Switch to Different Token
+
+To airdrop a different ERC20 token on Base:
+
+```env
+TOKEN_ADDRESS=0x...your_token_contract_address...
+TOKEN_SYMBOL=YOUR_TOKEN
+TOKEN_DECIMALS=18
+```
+
+Restart the application after changing token configuration.
 
 ---
 
 ## Admin Dashboard
 
-Access at: `http://localhost:3000/admin`
-
 ### Pages
 
 | Route | Description |
 |-------|-------------|
-| `/admin/dashboard` | Overview, trigger actions |
-| `/admin/snapshots` | List all snapshots |
-| `/admin/distributions` | List all distributions |
-| `/admin/distributions/:id` | Distribution detail, execute airdrop |
-| `/admin/batches` | Batch status |
-| `/admin/search` | Search by wallet address |
+| `/admin/dashboard` | Overview, wallet status, workflow controls |
+| `/admin/snapshots` | All snapshots with holder counts |
+| `/admin/snapshots/:id` | Snapshot detail with holder list |
+| `/admin/distributions` | All distributions with status |
+| `/admin/distributions/:id` | Distribution detail, approve airdrop |
+| `/admin/recipients` | All recipients with filters |
+| `/admin/batches` | Batch status, retry failed |
+| `/admin/batches/:id` | Batch detail with recipients |
+| `/admin/search` | Search wallet airdrop history |
+| `/admin/analytics` | Charts, metrics, exports |
 
-### Manual Actions
+### Dashboard Features
 
-From the dashboard you can:
-1. Trigger START/END snapshots
-2. Trigger calculation
-3. Enter reward amount and approve distribution
-4. Execute airdrop (processes all batches)
-5. Retry failed batches
+**Wallet Status Panel:**
+- Live ETH balance (for gas fees)
+- Live token balance (for airdrops)
+- Yellow warning border when funding needed
+- Click-to-copy wallet address
+- Direct link to BaseScan
+
+**Workflow Controls:**
+- Start Snapshot button
+- End Snapshot button
+- Calculate button
+- Approve & Execute button
+
+**Mode Indicators:**
+- FORK MODE / PRODUCTION badge
+- MOCK DATA badge (if mock snapshots)
+- SIMULATED TX / LIVE TX badge
+
+### Analytics & Exports
+
+| Export | Route | Description |
+|--------|-------|-------------|
+| Summary CSV | `/admin/analytics/export/summary` | All distributions summary |
+| Gas Report | `/admin/analytics/export/gas` | Gas usage per batch |
+| Recipients | `/admin/export/distribution/:id/recipients` | Distribution recipients |
+| Batches | `/admin/export/distribution/:id/batches` | Batch details |
+| Holders | `/admin/export/snapshot/:id/holders` | Snapshot holders |
 
 ---
 
-## Scripts Reference
+## Wallet Management
 
-### Scan Bot-Restricted Addresses
+### Airdrop Wallet Requirements
 
-```bash
-# Scan using RPC from .env
-node scripts/scan-restricted.js
+The airdrop wallet needs:
 
-# Scan using specific RPC
-node scripts/scan-restricted.js --rpc http://localhost:8545
-node scripts/scan-restricted.js --rpc https://mainnet.base.org
+| Asset | Purpose | Minimum |
+|-------|---------|---------|
+| ETH | Gas fees for transactions | 0.01 ETH |
+| Tokens | Tokens to airdrop | Depends on reward pool |
+
+### Startup Balance Logging
+
+When the server starts, wallet balances are logged:
+
+```
+───────────────────────────────────────────────────────────
+WALLET BALANCES:
+  ETH Balance: 0.050000 ETH ✓
+  AQUARI Balance: 50,000 AQUARI ✓
 ```
 
-**What it does:**
-- Fetches all unique holder addresses from database
-- Checks each against AQUARI's `isBotRestricted()` function
-- Stores restricted addresses in `restricted_addresses` collection
-- These addresses are automatically excluded during calculation
+If balances are low:
 
-**When to run:**
-- Before your first airdrop
-- Periodically (weekly) to catch newly restricted addresses
-- After seeing `RestrictedByAntiBot()` errors
+```
+WALLET BALANCES:
+  ETH Balance: 0.001234 ETH ⚠️  LOW - Fund wallet for gas fees!
+  AQUARI Balance: 500 AQUARI ⚠️  LOW - Fund wallet with tokens to airdrop!
+───────────────────────────────────────────────────────────
+⚠️  WALLET NEEDS FUNDING:
+  Address: 0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199
+  → Send ETH for gas fees (recommended: 0.01+ ETH)
+  → Send AQUARI tokens to airdrop
+```
+
+### Dashboard Wallet Panel
+
+The dashboard shows real-time wallet status:
+- Current ETH balance (red if < 0.01 ETH)
+- Current token balance (red if < 1000 tokens)
+- Funding instructions with copy address button
+- Yellow border when funding needed
+
+---
+
+## API Endpoints
+
+### Health Check
+
+```bash
+curl http://localhost:3000/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-01-21T12:00:00.000Z",
+  "version": "1.0.0",
+  "environment": "development",
+  "mode": "fork",
+  "mockSnapshots": false,
+  "mockTransactions": false,
+  "services": {
+    "database": {
+      "connected": true,
+      "name": "aquari-airdrop"
+    },
+    "redis": {
+      "connected": true
+    },
+    "blockchain": {
+      "healthy": true,
+      "walletAddress": "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
+      "ethBalance": "10.0000 ETH",
+      "tokenBalance": "2,000,000 AQUARI",
+      "gasPrice": "0.01 gwei"
+    }
+  },
+  "lastSnapshot": {
+    "weekId": "2025-W03-end",
+    "status": "completed",
+    "timestamp": "2025-01-19T23:59:00.000Z"
+  },
+  "pendingBatches": 0
+}
+```
+
+### Job Status
+
+```bash
+curl http://localhost:3000/admin/jobs/status
+```
+
+Response:
+```json
+{
+  "scheduler": {
+    "isRunning": true,
+    "mode": "fork",
+    "currentCycle": 1,
+    "nextAction": "waiting-for-trigger",
+    "nextActionTime": null,
+    "lastSnapshot": "2025-01-21T12:00:00.000Z",
+    "lastCalculation": "2025-01-21T12:05:00.000Z",
+    "lastAirdrop": null
+  },
+  "activeJobs": [],
+  "recentJobs": [
+    {
+      "id": "...",
+      "type": "snapshot",
+      "status": "completed",
+      "createdAt": "2025-01-21T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Blockchain Status
+
+```bash
+curl http://localhost:3000/admin/blockchain/status
+```
+
+Response:
+```json
+{
+  "network": "Base",
+  "chainId": 8453,
+  "walletAddress": "0x...",
+  "ethBalance": "10.0000",
+  "tokenBalance": "2000000.0000",
+  "tokenSymbol": "AQUARI",
+  "gasPrice": "0.01",
+  "isReady": true
+}
+```
 
 ---
 
 ## Environment Variables
 
-### Core Settings
+### Required Variables
 
-| Variable | Fork Mode | Production | Description |
-|----------|-----------|------------|-------------|
-| `MODE` | `fork` | `production` | Determines scheduling and defaults |
-| `NODE_ENV` | `development` | `production` | Express environment |
-| `RPC_URL` | `http://localhost:8545` | `https://mainnet.base.org` | Blockchain RPC endpoint |
-| `PRIVATE_KEY` | Auto (test key) | **Required** | Wallet for signing transactions |
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `MODE` | `fork` or `production` | `fork` |
+| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017/aquari-airdrop` |
+| `MORALIS_API_KEY` | Moralis API key | `eyJ...` |
+| `ADMIN_USERNAME` | Dashboard login | `admin` |
+| `ADMIN_PASSWORD` | Dashboard password | `secure_password` |
+| `SESSION_SECRET` | 64+ char random string | `abc123...` |
 
-### Mock Flags
+### Token Configuration
 
-| Variable | Fork Mode | Production | Description |
-|----------|-----------|------------|-------------|
-| `MOCK_SNAPSHOTS` | `false` | `false` | Use real Moralis API |
-| `MOCK_TRANSACTIONS` | `false` | `false` | Execute real blockchain txs |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TOKEN_ADDRESS` | AQUARI address | ERC20 token to airdrop |
+| `TOKEN_SYMBOL` | `AQUARI` | Display name |
+| `TOKEN_DECIMALS` | `18` | Token decimals |
+| `MIN_BALANCE` | `1000000000000000000000` | 1000 tokens (in wei) |
 
-### Database
+### Blockchain Settings
 
-| Variable | Description |
-|----------|-------------|
-| `MONGODB_URI` | MongoDB connection string |
-| `REDIS_URL` | Redis for job queue (optional) |
-
-### API Keys
-
-| Variable | Description |
-|----------|-------------|
-| `MORALIS_API_KEY` | For fetching token holders |
-
-### Admin Dashboard
-
-| Variable | Description |
-|----------|-------------|
-| `ADMIN_USERNAME` | Dashboard login username |
-| `ADMIN_PASSWORD` | Dashboard login password |
-| `SESSION_SECRET` | 64+ char random string for sessions |
+| Variable | Fork Mode | Production |
+|----------|-----------|------------|
+| `RPC_URL` | `http://localhost:8545` | `https://mainnet.base.org` |
+| `PRIVATE_KEY` | Auto (test key) | **Required** |
+| `MOCK_TRANSACTIONS` | `false` | `false` |
 
 ### Batch Settings
 
@@ -350,159 +720,17 @@ node scripts/scan-restricted.js --rpc https://mainnet.base.org
 | `BATCH_SIZE` | `500` | Recipients per transaction |
 | `MAX_GAS_PRICE` | `50000000000` | 50 gwei max |
 | `CONFIRMATIONS` | `1` (fork) / `3` (prod) | Blocks to wait |
-| `MIN_BALANCE` | `1000000000000000000000` | 1000 AQUARI minimum |
 
----
+### Scheduling (Fork Mode)
 
-## Docker Compose
-
-### Development (with Anvil)
-
-```bash
-# Start all services (MongoDB, Redis, Anvil)
-docker compose up -d
-
-# View logs
-docker compose logs -f
-
-# Stop
-docker compose down
-
-# Stop and clear data
-docker compose down -v
-```
-
-### Production
-
-Create `docker-compose.prod.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  app:
-    build: .
-    container_name: aquari-airdrop
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - MODE=production
-    env_file:
-      - .env.production
-    depends_on:
-      - mongodb
-      - redis
-    restart: unless-stopped
-
-  mongodb:
-    image: mongo:7
-    container_name: aquari-mongodb
-    volumes:
-      - mongo_data:/data/db
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS}
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    container_name: aquari-redis
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    restart: unless-stopped
-
-volumes:
-  mongo_data:
-  redis_data:
-```
-
-Create `Dockerfile`:
-
-```dockerfile
-FROM node:20-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY dist ./dist
-COPY src/admin/views ./dist/admin/views
-COPY public ./public
-
-ENV NODE_ENV=production
-EXPOSE 3000
-
-CMD ["node", "dist/index.js"]
-```
-
-Deploy:
-```bash
-# Build
-npm run build
-
-# Start production
-docker compose -f docker-compose.prod.yml up -d
-```
-
----
-
-## Troubleshooting
-
-### Error: `RestrictedByAntiBot()`
-
-**Cause:** Some recipients are bot-restricted by AQUARI's antibot system.
-
-**Solution:**
-```bash
-# Scan and store restricted addresses
-node scripts/scan-restricted.js
-
-# Recalculate distribution (restricted addresses will be excluded)
-# From admin dashboard: delete distribution and recalculate
-```
-
-### Error: Transaction reverts with no data
-
-**Causes:**
-1. Bot-restricted addresses in batch
-2. Insufficient token balance
-3. Insufficient allowance for Disperse contract
-
-**Solution:**
-1. Run `scan-restricted.js` and recalculate
-2. Check wallet balance in dashboard
-3. Approval is automatic, but verify in dashboard
-
-### Anvil fork is slow
-
-**Cause:** Anvil fetches state on-demand from upstream RPC, causing rate limits.
-
-**Solution:**
-1. Use a paid RPC with higher limits
-2. Pre-warm cache by running `scan-restricted.js` first
-3. Reduce batch size temporarily
-
-### Moralis API rate limit
-
-**Cause:** Free tier limited to 40,000 CU/day.
-
-**Solution:**
-1. Upgrade Moralis plan
-2. Use `MOCK_SNAPSHOTS=true` for testing
-3. Cache snapshots and reuse
-
-### Dashboard shows "Real funds will be transferred"
-
-**Cause:** `RPC_URL` points to mainnet instead of Anvil.
-
-**Solution:**
-```env
-# For fork mode testing
-RPC_URL=http://localhost:8545
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTO_START` | `false` | Auto-start workflow on boot |
+| `START_DELAY_MINUTES` | `0` | Delay before starting |
+| `SNAPSHOT_INTERVAL` | `10` | Minutes between snapshots |
+| `CALCULATE_DELAY` | `5` | Minutes after snapshot |
+| `SNAPSHOT_CRON` | - | Cron expression for snapshot |
+| `CALCULATE_CRON` | - | Cron expression for calculate |
 
 ---
 
@@ -517,6 +745,138 @@ RPC_URL=http://localhost:8545
 | `batches` | Batch records with recipients and txHash |
 | `restricted_addresses` | Bot-restricted addresses to exclude |
 | `config` | System configuration |
+| `jobs` | Job execution records |
+
+---
+
+## Scripts
+
+### Scan Bot-Restricted Addresses
+
+**Required before first airdrop:**
+
+```bash
+# Use RPC from .env
+node scripts/scan-restricted.js
+
+# Use specific RPC
+node scripts/scan-restricted.js --rpc http://localhost:8545
+node scripts/scan-restricted.js --rpc https://mainnet.base.org
+```
+
+**What it does:**
+- Fetches all unique holder addresses from database
+- Checks each against AQUARI's `isBotRestricted()` function
+- Stores restricted addresses in `restricted_addresses` collection
+- These addresses are automatically excluded during calculation
+
+**When to run:**
+- Before your first airdrop
+- Weekly (to catch newly restricted addresses)
+- After seeing `RestrictedByAntiBot()` errors
+
+---
+
+## Troubleshooting
+
+### Error: `RestrictedByAntiBot()`
+
+**Cause:** Some recipients are bot-restricted by AQUARI's antibot system.
+
+**Solution:**
+```bash
+node scripts/scan-restricted.js
+# Then recalculate from dashboard
+```
+
+### Wallet Balance Shows 0
+
+**Causes:**
+- RPC not accessible
+- Wrong RPC URL
+- Private key not set
+
+**Solution:**
+1. Check `RPC_URL` is correct
+2. Verify Anvil is running (fork mode)
+3. Check `PRIVATE_KEY` (production mode)
+
+### Transaction Reverts
+
+**Causes:**
+1. Bot-restricted addresses in batch
+2. Insufficient token balance
+3. Insufficient ETH for gas
+
+**Solution:**
+1. Run `scan-restricted.js`
+2. Check wallet balances in dashboard
+3. Fund wallet with ETH and tokens
+
+### Gas Price Too High
+
+**Cause:** Network congestion
+
+**Solution:** System automatically waits. Adjust `MAX_GAS_PRICE` if needed.
+
+### Moralis API Rate Limit
+
+**Cause:** Free tier limited to 40,000 CU/day
+
+**Solution:**
+1. Upgrade Moralis plan
+2. Use `MOCK_SNAPSHOTS=true` for testing
+3. Space out snapshot requests
+
+### Dashboard Shows Funding Warning
+
+**Solution:** Send ETH (for gas) and tokens (for airdrops) to the wallet address shown.
+
+### Anvil Fork is Slow
+
+**Cause:** Anvil fetches state on-demand, causing RPC rate limits
+
+**Solution:**
+1. Use paid RPC with higher limits
+2. Run `scan-restricted.js` first to warm cache
+3. Reduce batch size temporarily
+
+---
+
+## Deployment
+
+For detailed deployment instructions including:
+- EC2 setup
+- Docker deployment
+- PM2 process management
+- Nginx configuration
+- SSL setup
+- Environment security
+
+See: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+
+---
+
+## Technical Documentation
+
+For detailed technical specifications:
+- Database schemas
+- Architecture diagrams
+- API internals
+
+See: **[docs/TECHNICAL.md](docs/TECHNICAL.md)**
+
+---
+
+## Security Features
+
+| Feature | Description |
+|---------|-------------|
+| Login Rate Limiting | 5 attempts per 15 minutes per IP |
+| Session Auth | httpOnly cookies, 24h expiry |
+| Pre-flight Checks | Validates balances before airdrops |
+| Gas Oracle | Monitors gas, waits for acceptable levels |
+| Bot Filtering | Excludes antibot-restricted addresses |
 
 ---
 

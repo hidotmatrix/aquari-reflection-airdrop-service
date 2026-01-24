@@ -13,14 +13,14 @@ import { initializeScheduler, stopScheduler, getSchedulerState } from './schedul
  * - test mode: Fast cycles with configurable timing (minutes)
  * - production mode: Weekly cron schedule (Sunday/Monday UTC)
  */
-export function initializeJobs(db: Db): void {
+export async function initializeJobs(db: Db): Promise<void> {
   // Log if Redis is not required (development mode)
   if (!isRedisRequired()) {
     logger.info('Redis not required in development mode - jobs will run locally');
   }
 
   // Initialize the scheduler (handles both test and production modes)
-  initializeScheduler(db);
+  await initializeScheduler(db);
 }
 
 /**

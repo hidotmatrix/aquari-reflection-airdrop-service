@@ -10,6 +10,7 @@ import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired, getRedis
 import { initializeJobs, stopAllJobs, startWorker, stopWorker } from './jobs';
 import { initializeBlockchain, getWalletEthBalance, getWalletTokenBalance, getWalletAddress } from './services/blockchain.service';
 import { getGasPrices } from './utils/gas-oracle';
+import { initializeJobLogService, createJobLogIndexes } from './services/job-log.service';
 import adminRoutes from './admin/routes/admin.routes';
 import { logger } from './utils/logger';
 
@@ -197,6 +198,10 @@ async function main(): Promise<void> {
     // Create database indexes
     await createIndexes(db);
 
+    // Initialize job log service
+    initializeJobLogService(db);
+    await createJobLogIndexes();
+
     // Initialize blockchain service
     initializeBlockchain();
 
@@ -205,7 +210,7 @@ async function main(): Promise<void> {
 
     // Initialize cron jobs (this also initializes Redis)
     try {
-      initializeJobs(db);
+      await initializeJobs(db);
 
       // Start the background worker for job processing
       // In production, this would run as a separate process

@@ -56,7 +56,7 @@ export function getSchedulerState(): SchedulerState {
 /**
  * Initialize the scheduler based on MODE
  */
-export function initializeScheduler(db: Db): void {
+export async function initializeScheduler(db: Db): Promise<void> {
   const config = getConfig();
   schedulerState.mode = config.MODE;
 
@@ -64,10 +64,82 @@ export function initializeScheduler(db: Db): void {
   logger.info(`Scheduler: ${getModeName()}`);
   logger.info('───────────────────────────────────────────────────────────');
 
+  // Check database for current state before initializing crons
+  await restoreSchedulerState(db);
+
   // Initialize 4-cron scheduler
   initializeFourCronScheduler(db);
 
   schedulerState.isRunning = true;
+}
+
+/**
+ * Restore scheduler state from database on startup
+ */
+async function restoreSchedulerState(db: Db): Promise<void> {
+  try {
+    // Find the most recent distribution or snapshot to determine current cycle
+    const latestDist = await db.collection('distributions')
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .toArray();
+
+    const latestSnapshot = await db.collection('snapshots')
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .toArray();
+
+    if (latestDist.length === 0 && latestSnapshot.length === 0) {
+      logger.info('No previous data found - starting fresh');
+      return;
+    }
+
+    // Determine current cycle from weekId
+    let currentWeekId = '';
+    if (latestDist.length > 0 && latestDist[0]?.weekId) {
+      currentWeekId = latestDist[0].weekId;
+    } else if (latestSnapshot.length > 0 && latestSnapshot[0]?.weekId) {
+      currentWeekId = latestSnapshot[0].weekId.replace(/-start$/, '').replace(/-end$/, '');
+    }
+
+    // Extract cycle number from TEST-XXX format
+    const match = currentWeekId.match(/TEST-(\d+)/);
+    if (match && match[1]) {
+      schedulerState.currentCycle = parseInt(match[1], 10);
+      logger.info(`Restored cycle number: ${schedulerState.currentCycle} (${currentWeekId})`);
+    }
+
+    // Check what step we're at for the current week
+    const dist = latestDist[0];
+    if (dist) {
+      if (dist.status === 'ready') {
+        schedulerState.nextAction = 'waiting-for-airdrop';
+        logger.info(`Distribution ${dist.weekId} is ready - waiting for airdrop cron`);
+      } else if (dist.status === 'completed') {
+        schedulerState.nextAction = 'waiting-for-start-snapshot';
+        logger.info(`Distribution ${dist.weekId} completed - waiting for next cycle`);
+      } else if (dist.status === 'processing') {
+        schedulerState.nextAction = 'airdrop-in-progress';
+        logger.info(`Distribution ${dist.weekId} is processing`);
+      }
+    } else {
+      // No distribution - check snapshots
+      const startSnap = await db.collection('snapshots').findOne({ weekId: `${currentWeekId}-start` });
+      const endSnap = await db.collection('snapshots').findOne({ weekId: `${currentWeekId}-end` });
+
+      if (endSnap?.status === 'completed') {
+        schedulerState.nextAction = 'waiting-for-calculate';
+        logger.info(`Both snapshots done for ${currentWeekId} - waiting for calculate cron`);
+      } else if (startSnap?.status === 'completed') {
+        schedulerState.nextAction = 'waiting-for-end-snapshot';
+        logger.info(`Start snapshot done for ${currentWeekId} - waiting for end snapshot cron`);
+      }
+    }
+  } catch (error) {
+    logger.warn('Could not restore scheduler state:', error);
+  }
 }
 
 /**
@@ -202,14 +274,32 @@ function initializeFourCronScheduler(db: Db): void {
   });
   logger.info(`  Airdrop cron scheduled`);
 
-  // Set initial state
-  schedulerState.nextAction = 'waiting-for-start-snapshot';
-  schedulerState.nextActionTime = getNextCronTime(schedule.startSnapshotCron);
+  // Set next action time based on restored state (or default to start snapshot)
+  if (!schedulerState.nextAction || schedulerState.nextAction === 'none') {
+    schedulerState.nextAction = 'waiting-for-start-snapshot';
+  }
+
+  // Set the correct next action time based on current state
+  switch (schedulerState.nextAction) {
+    case 'waiting-for-start-snapshot':
+      schedulerState.nextActionTime = getNextCronTime(schedule.startSnapshotCron);
+      break;
+    case 'waiting-for-end-snapshot':
+      schedulerState.nextActionTime = getNextCronTime(schedule.endSnapshotCron);
+      break;
+    case 'waiting-for-calculate':
+      schedulerState.nextActionTime = getNextCronTime(schedule.calculateCron);
+      break;
+    case 'waiting-for-airdrop':
+      schedulerState.nextActionTime = getNextCronTime(schedule.airdropCron);
+      break;
+  }
 
   logger.info('');
   logger.info('4-step cron scheduler ready');
+  logger.info(`   State: ${schedulerState.nextAction}`);
   if (schedulerState.nextActionTime) {
-    logger.info(`   Next: Start Snapshot at ${schedulerState.nextActionTime.toLocaleString()}`);
+    logger.info(`   Next action at: ${schedulerState.nextActionTime.toLocaleString()}`);
   }
   logger.info('');
 }

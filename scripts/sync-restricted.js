@@ -35,39 +35,45 @@ async function syncRestricted() {
   console.log('  SYNC RESTRICTED ADDRESSES');
   console.log('═══════════════════════════════════════════════════════════\n');
 
+  console.log('Connecting to:', MONGODB_URI);
+
   const client = new MongoClient(MONGODB_URI);
 
   try {
     await client.connect();
+    console.log('Connected to MongoDB\n');
+
     const db = client.db();
     const collection = db.collection('restricted_addresses');
 
-    console.log(`Loading ${RESTRICTED_ADDRESSES.length} restricted addresses...\n`);
+    // Check current count
+    const beforeCount = await collection.countDocuments();
+    console.log(`Current documents in collection: ${beforeCount}`);
+    console.log(`Addresses to sync: ${RESTRICTED_ADDRESSES.length}\n`);
 
-    let inserted = 0;
-    let skipped = 0;
-
-    for (const address of RESTRICTED_ADDRESSES) {
-      const exists = await collection.findOne({ address: address.toLowerCase() });
-
-      if (!exists) {
-        await collection.insertOne({
-          address: address.toLowerCase(),
-          reason: 'bot-restricted',
-          createdAt: new Date()
-        });
-        inserted++;
-      } else {
-        skipped++;
+    // Use bulkWrite with upsert for efficiency
+    const operations = RESTRICTED_ADDRESSES.map(address => ({
+      updateOne: {
+        filter: { address: address.toLowerCase() },
+        update: {
+          $setOnInsert: {
+            address: address.toLowerCase(),
+            reason: 'bot-restricted',
+            createdAt: new Date()
+          }
+        },
+        upsert: true
       }
-    }
+    }));
 
-    const total = await collection.countDocuments();
+    const result = await collection.bulkWrite(operations);
+
+    const afterCount = await collection.countDocuments();
 
     console.log('✅ Done!');
-    console.log(`   Inserted: ${inserted}`);
-    console.log(`   Skipped (already exists): ${skipped}`);
-    console.log(`   Total in DB: ${total}\n`);
+    console.log(`   Inserted: ${result.upsertedCount}`);
+    console.log(`   Already existed: ${RESTRICTED_ADDRESSES.length - result.upsertedCount}`);
+    console.log(`   Total in DB: ${afterCount}\n`);
 
   } catch (error) {
     console.error('Error:', error.message);

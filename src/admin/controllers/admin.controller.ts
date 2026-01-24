@@ -17,7 +17,7 @@ import {
 } from '../../models';
 import { startJob } from '../../services/job.runner';
 import { getJobById, getActiveJobs as getActiveJobsFromDb, getRecentJobs } from '../../services/job.service';
-import { getSchedulerState, manualStartWorkflow } from '../../jobs/scheduler';
+import { getSchedulerState } from '../../jobs/scheduler';
 import {
   getWalletEthBalance,
   getWalletTokenBalance,
@@ -988,32 +988,16 @@ export async function getJobLogs(req: Request, res: Response): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════
-// WORKFLOW CONTROL (Manual start for fork mode)
+// WORKFLOW CONTROL
 // ═══════════════════════════════════════════════════════════
 
-export async function startWorkflow(req: Request, res: Response): Promise<void> {
-  const db: Db = req.app.locals.db;
-
-  try {
-    const result = manualStartWorkflow(db);
-
-    if (result.success) {
-      res.json({
-        success: true,
-        message: result.message,
-        scheduler: getSchedulerState(),
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        error: result.message,
-        scheduler: getSchedulerState(),
-      });
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ success: false, error: message });
-  }
+export async function startWorkflow(_req: Request, res: Response): Promise<void> {
+  // System is now fully cron-based - no manual workflow start
+  res.status(400).json({
+    success: false,
+    error: 'System is cron-based. Configure cron times in .env to control scheduling.',
+    scheduler: getSchedulerState(),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════

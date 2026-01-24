@@ -23,16 +23,11 @@ interface NetworkConfig {
 
 interface ScheduleConfig {
   useFastCycles: boolean;
-  autoStart: boolean;
-  startDelayMinutes: number;
-  // Cron-based scheduling (optional - if set, uses cron instead of intervals)
-  snapshotCron: string | null;
-  calculateCron: string | null;
-  // Interval-based scheduling (used when cron not set)
-  snapshotIntervalMinutes: number;
-  calculateDelayMinutes: number;
-  airdropDelayMinutes: number;
-  autoApprove: boolean;
+  // Cron-based scheduling - 4 separate cron jobs (Required)
+  startSnapshotCron: string | null;   // Step 1: Take START snapshot
+  endSnapshotCron: string | null;     // Step 2: Take END snapshot
+  calculateCron: string | null;       // Step 3: Calculate rewards
+  airdropCron: string | null;         // Step 4: Auto-airdrop (100% wallet balance)
 }
 
 interface EnvConfig {
@@ -151,24 +146,19 @@ export function validateEnv(): EnvConfig {
     moralisChain: CONTRACTS.MORALIS_CHAIN,
   };
 
-  // Schedule config (can override timing from .env)
-  // AUTO_START: Whether to start the workflow automatically on server start (default: false for fork)
-  // START_DELAY_MINUTES: Minutes to wait before starting the first cycle (default: 0)
-  // SNAPSHOT_CRON / CALCULATE_CRON: Optional cron expressions for scheduled runs
-  //   Example: "30 14 * * *" = 2:30 PM daily, "0 */2 * * *" = every 2 hours
-  const snapshotCron = getEnvVar('SNAPSHOT_CRON', false) || null;
+  // Schedule config - 4 separate cron jobs (Required):
+  //   START_SNAPSHOT_CRON → END_SNAPSHOT_CRON → CALCULATE_CRON → AIRDROP_CRON
+  const startSnapshotCron = getEnvVar('START_SNAPSHOT_CRON', false) || null;
+  const endSnapshotCron = getEnvVar('END_SNAPSHOT_CRON', false) || null;
   const calculateCron = getEnvVar('CALCULATE_CRON', false) || null;
+  const airdropCron = getEnvVar('AIRDROP_CRON', false) || null;
 
   const schedule: ScheduleConfig = {
     useFastCycles: preset.useFastCycles,
-    autoStart: getEnvVarAsBool('AUTO_START', false),
-    startDelayMinutes: getEnvVarAsInt('START_DELAY_MINUTES', 0),
-    snapshotCron,
+    startSnapshotCron,
+    endSnapshotCron,
     calculateCron,
-    snapshotIntervalMinutes: getEnvVarAsInt('SNAPSHOT_INTERVAL', preset.snapshotIntervalMinutes),
-    calculateDelayMinutes: getEnvVarAsInt('CALCULATE_DELAY', preset.calculateDelayMinutes),
-    airdropDelayMinutes: getEnvVarAsInt('AIRDROP_DELAY', preset.airdropDelayMinutes),
-    autoApprove: getEnvVarAsBool('AUTO_APPROVE', preset.autoApprove),
+    airdropCron,
   };
 
   return {

@@ -2,7 +2,7 @@
 // Configuration Presets
 // ═══════════════════════════════════════════════════════════
 //
-// MODE=fork       → Fast test cycles (~20 min) on Anvil
+// MODE=fork       → Fast test cycles on Anvil (cron-based)
 // MODE=production → Weekly cron schedule on Base mainnet
 //
 // ═══════════════════════════════════════════════════════════
@@ -20,12 +20,6 @@ export interface Preset {
   // Schedule type
   useFastCycles: boolean;
 
-  // Fast cycle timing (fork mode only)
-  snapshotIntervalMinutes: number;  // Time between START and END snapshots
-  calculateDelayMinutes: number;    // Time after END snapshot to calculate
-  airdropDelayMinutes: number;      // Time after calculation to airdrop
-  autoApprove: boolean;             // Auto-approve airdrop or wait for manual
-
   // Defaults
   batchSize: number;
   minBalance: string;
@@ -34,14 +28,14 @@ export interface Preset {
 }
 
 // ═══════════════════════════════════════════════════════════
-// FORK MODE - Fast test cycles on Anvil
+// FORK MODE - Cron-based test cycles on Anvil
 // ═══════════════════════════════════════════════════════════
 //
-// Timeline (~20 minutes total):
-//   0:00  - Snapshot START (immediately on server start)
-//   10:00 - Snapshot END
-//   15:00 - Calculate rewards
-//   20:00 - Airdrop (auto or manual)
+// Configure via .env:
+//   START_SNAPSHOT_CRON=00 17 * * *   (5:00 PM)
+//   END_SNAPSHOT_CRON=05 17 * * *     (5:05 PM)
+//   CALCULATE_CRON=10 17 * * *        (5:10 PM)
+//   AIRDROP_CRON=15 17 * * *          (5:15 PM)
 //
 // ═══════════════════════════════════════════════════════════
 export const FORK_PRESET: Preset = {
@@ -49,11 +43,7 @@ export const FORK_PRESET: Preset = {
   mockSnapshots: false,              // Real Moralis API data
   mockTransactions: false,           // Real transactions (on fork)
 
-  useFastCycles: true,               // Use interval-based scheduling
-  snapshotIntervalMinutes: 10,       // 10 min between START and END
-  calculateDelayMinutes: 5,          // 5 min after END snapshot
-  airdropDelayMinutes: 5,            // 5 min after calculation
-  autoApprove: false,                // Manual approval (set true for full auto)
+  useFastCycles: true,               // For display purposes
 
   batchSize: 500,                    // Max batch size for Base
   minBalance: '1000000000000000000000',  // 1000 AQUARI
@@ -65,10 +55,11 @@ export const FORK_PRESET: Preset = {
 // PRODUCTION MODE - Weekly cron schedule
 // ═══════════════════════════════════════════════════════════
 //
-// Weekly Schedule (UTC):
-//   Sunday  23:59 - Snapshot
-//   Monday  00:30 - Calculate rewards
-//   Manual        - Airdrop approval
+// Configure via .env:
+//   START_SNAPSHOT_CRON=30 23 * * 0   (Sunday 23:30 UTC)
+//   END_SNAPSHOT_CRON=40 23 * * 0     (Sunday 23:40 UTC)
+//   CALCULATE_CRON=50 23 * * 0        (Sunday 23:50 UTC)
+//   AIRDROP_CRON=00 00 * * 1          (Monday 00:00 UTC)
 //
 // ═══════════════════════════════════════════════════════════
 export const PRODUCTION_PRESET: Preset = {
@@ -76,11 +67,7 @@ export const PRODUCTION_PRESET: Preset = {
   mockSnapshots: false,              // Real Moralis API data
   mockTransactions: false,           // Real transactions
 
-  useFastCycles: false,              // Use weekly cron schedule
-  snapshotIntervalMinutes: 0,        // Not used in production
-  calculateDelayMinutes: 0,          // Not used in production
-  airdropDelayMinutes: 0,            // Not used in production
-  autoApprove: false,                // Always manual in production
+  useFastCycles: false,              // For display purposes
 
   batchSize: 500,                    // Max batch size for Base
   minBalance: '1000000000000000000000',  // 1000 AQUARI

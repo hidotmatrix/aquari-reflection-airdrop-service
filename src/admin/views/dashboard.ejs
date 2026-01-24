@@ -344,22 +344,25 @@ function copyAddress(address) {
   </div>
 </div>
 
-<!-- Pending Airdrops (Ready for Approval) -->
+<!-- Pending Airdrops (Auto-Airdrop Pending) -->
 <% if (readyDistributions && readyDistributions.length > 0) { %>
-<div class="bg-dark-700 border border-emerald-500/30 rounded-xl mb-8">
+<div class="bg-dark-700 border border-cyan-500/30 rounded-xl mb-8">
   <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
     <div class="flex items-center gap-3">
-      <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+      <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
       <div>
-        <h2 class="text-base font-medium text-white">Ready for Airdrop</h2>
-        <p class="text-gray-500 text-xs mt-0.5"><%= readyDistributions.length %> distribution(s) awaiting approval</p>
+        <h2 class="text-base font-medium text-white">Auto-Airdrop Pending</h2>
+        <p class="text-gray-500 text-xs mt-0.5"><%= readyDistributions.length %> distribution(s) will auto-execute with 100% wallet balance</p>
       </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="px-3 py-1 text-xs font-medium rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+        ⚡ AUTO-AIRDROP ENABLED
+      </span>
     </div>
   </div>
   <div class="p-5 space-y-3">
     <% readyDistributions.forEach(d => {
-      const hasRewardConfig = d.config?.rewardPool && /^\d+$/.test(d.config.rewardPool) && BigInt(d.config.rewardPool) > 0n;
-      const distRewardPool = hasRewardConfig ? (BigInt(d.config.rewardPool) / BigInt(10**18)).toString() : '';
       const distRewardToken = d.config?.rewardToken || rewardToken;
     %>
     <div class="flex items-center justify-between bg-dark-800 rounded-lg p-4">
@@ -372,125 +375,22 @@ function copyAddress(address) {
         </div>
         <div class="border-l border-dark-600 pl-6">
           <span class="text-xs text-gray-500 block">Reward Pool</span>
-          <% if (hasRewardConfig) { %>
-          <span class="text-sm font-mono text-emerald-400"><%= distRewardPool %> <%= distRewardToken %></span>
-          <% } else { %>
-          <span class="text-sm text-yellow-400">TBD (set on approval)</span>
-          <% } %>
+          <span class="text-sm text-cyan-400">100% of wallet balance (<%= distRewardToken %>)</span>
         </div>
       </div>
       <div class="flex items-center gap-3">
         <a href="/admin/distributions/<%= d._id %>" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
           View Details →
         </a>
-        <button onclick="showApprovalModal('<%= d._id %>', '<%= d.weekId %>', <%= d.stats?.eligibleHolders || 0 %>, '<%= distRewardPool %>', '<%= distRewardToken %>')"
-          class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
-          <% if (mockTransactions) { %>
-          Simulate Airdrop
-          <% } else { %>
-          Execute Airdrop
-          <% } %>
-        </button>
+        <span class="px-4 py-2 bg-dark-600 text-gray-400 text-sm font-medium rounded-lg">
+          Waiting for cron...
+        </span>
       </div>
     </div>
     <% }) %>
   </div>
 </div>
 <% } %>
-
-<!-- Approval Modal -->
-<div id="approvalModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-  <div class="bg-dark-700 border border-dark-500 rounded-2xl w-full max-w-md shadow-2xl">
-    <!-- Modal Header -->
-    <div class="px-6 py-4 border-b border-dark-500">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-semibold text-white">Approve Airdrop</h3>
-        <button onclick="closeApprovalModal()" class="text-gray-500 hover:text-white transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Modal Body -->
-    <div class="px-6 py-5">
-      <!-- Week Info -->
-      <div class="bg-dark-800 rounded-lg p-4 mb-5">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-gray-500 text-sm">Week</span>
-          <span id="modalWeekId" class="font-mono text-cyan-400">—</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-gray-500 text-sm">Eligible Holders</span>
-          <span id="modalHolders" class="text-white font-medium">—</span>
-        </div>
-      </div>
-
-      <!-- Reward Input -->
-      <div class="mb-5">
-        <label class="block text-sm font-medium text-gray-300 mb-2">
-          Reward Pool Amount <span class="text-red-400">*</span>
-        </label>
-        <div class="flex">
-          <input type="number" id="rewardAmount" step="0.001" min="0.001" placeholder="Enter amount to distribute"
-            class="flex-1 bg-dark-800 border border-dark-500 text-white text-lg font-mono rounded-l-lg px-4 py-3 focus:border-cyan-500 focus:outline-none"
-            required>
-          <select id="rewardToken"
-            class="bg-dark-600 border border-dark-500 border-l-0 text-white text-sm font-medium rounded-r-lg px-4 py-3 focus:outline-none">
-            <option value="ETH" <%= rewardToken === 'ETH' ? 'selected' : '' %>>ETH</option>
-            <option value="USDC" <%= rewardToken === 'USDC' ? 'selected' : '' %>>USDC</option>
-            <option value="AQUARI" <%= rewardToken === 'AQUARI' ? 'selected' : '' %>>AQUARI</option>
-          </select>
-        </div>
-        <p class="text-xs text-gray-500 mt-2">Enter the total amount to distribute proportionally to all eligible holders</p>
-      </div>
-
-      <!-- Mode Indicator -->
-      <div class="bg-dark-800 rounded-lg p-4 mb-5">
-        <div class="flex items-center gap-3">
-          <% if (mockTransactions) { %>
-          <div class="w-3 h-3 bg-purple-400 rounded-full"></div>
-          <div>
-            <span class="text-purple-400 font-medium text-sm">Simulation Mode</span>
-            <p class="text-gray-500 text-xs">No real transactions will be sent</p>
-          </div>
-          <% } else { %>
-          <div class="w-3 h-3 bg-red-400 rounded-full animate-pulse"></div>
-          <div>
-            <span class="text-red-400 font-medium text-sm">Production Mode</span>
-            <p class="text-gray-500 text-xs">Real funds will be transferred!</p>
-          </div>
-          <% } %>
-        </div>
-      </div>
-
-      <!-- Summary will be shown here -->
-      <div id="rewardSummary" class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 hidden">
-        <div class="flex justify-between items-center">
-          <span class="text-gray-400 text-sm">Estimated per holder</span>
-          <span id="perHolderAmount" class="text-emerald-400 font-mono">—</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal Footer -->
-    <div class="px-6 py-4 border-t border-dark-500 flex gap-3">
-      <button onclick="closeApprovalModal()"
-        class="flex-1 px-4 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm font-medium rounded-lg transition-colors">
-        Cancel
-      </button>
-      <button onclick="confirmApproval()" id="btnConfirmApproval"
-        class="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50">
-        <% if (mockTransactions) { %>
-        Start Simulation
-        <% } else { %>
-        Execute Airdrop
-        <% } %>
-      </button>
-    </div>
-  </div>
-</div>
 
 <!-- Job Terminal / Live Logs -->
 <div id="jobTerminal" class="bg-dark-700 border border-dark-500 rounded-xl mb-8 hidden">
@@ -1116,121 +1016,4 @@ function copyAddress(address) {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // Airdrop Approval Modal
-  // ═══════════════════════════════════════════════════════════
-
-  let currentApprovalData = null;
-
-  function showApprovalModal(distributionId, weekId, eligibleHolders, configuredRewardPool, configuredRewardToken) {
-    currentApprovalData = { distributionId, weekId, eligibleHolders };
-
-    // Update modal content
-    document.getElementById('modalWeekId').textContent = weekId;
-    document.getElementById('modalHolders').textContent = eligibleHolders.toLocaleString();
-
-    // Set input to distribution's configured value (or empty for admin to enter)
-    document.getElementById('rewardAmount').value = configuredRewardPool || '';
-    document.getElementById('rewardToken').value = configuredRewardToken || '<%= rewardToken %>';
-
-    // Update per-holder estimate (will hide if no amount)
-    updatePerHolderEstimate();
-
-    // Show modal
-    document.getElementById('approvalModal').classList.remove('hidden');
-
-    // Focus on input for quick entry
-    document.getElementById('rewardAmount').focus();
-  }
-
-  // Register event listeners once (outside the function to prevent stacking)
-  document.getElementById('rewardAmount')?.addEventListener('input', updatePerHolderEstimate);
-  document.getElementById('rewardToken')?.addEventListener('change', updatePerHolderEstimate);
-
-  function closeApprovalModal() {
-    document.getElementById('approvalModal').classList.add('hidden');
-    currentApprovalData = null;
-  }
-
-  function updatePerHolderEstimate() {
-    if (!currentApprovalData) return;
-
-    const amount = parseFloat(document.getElementById('rewardAmount').value) || 0;
-    const token = document.getElementById('rewardToken').value;
-    const holders = currentApprovalData.eligibleHolders;
-
-    if (amount > 0 && holders > 0) {
-      const perHolder = amount / holders;
-      document.getElementById('perHolderAmount').textContent = `~${perHolder.toFixed(8)} ${token}`;
-      document.getElementById('rewardSummary').classList.remove('hidden');
-    } else {
-      document.getElementById('rewardSummary').classList.add('hidden');
-    }
-  }
-
-  async function confirmApproval() {
-    if (!currentApprovalData) return;
-
-    const { distributionId, weekId } = currentApprovalData;
-    const rewardAmount = parseFloat(document.getElementById('rewardAmount').value);
-    const rewardToken = document.getElementById('rewardToken').value;
-    const mode = '<%= mockTransactions ? "SIMULATED" : "PRODUCTION" %>';
-
-    if (!rewardAmount || rewardAmount <= 0) {
-      alert('Please enter a valid reward amount');
-      return;
-    }
-
-    // Production mode double confirmation
-    if (mode !== 'SIMULATED') {
-      if (!confirm(`⚠️ PRODUCTION MODE ⚠️\n\nYou are about to distribute ${rewardAmount} ${rewardToken} to ${currentApprovalData.eligibleHolders} holders.\n\nThis action CANNOT be undone. Continue?`)) {
-        return;
-      }
-    }
-
-    const btn = document.getElementById('btnConfirmApproval');
-    btn.disabled = true;
-    btn.textContent = 'Starting...';
-
-    try {
-      // Convert to wei (18 decimals)
-      const rewardPoolWei = (BigInt(Math.floor(rewardAmount * 1e6)) * BigInt(1e12)).toString();
-
-      const res = await fetch('/admin/approve-airdrop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          distributionId,
-          rewardPool: rewardPoolWei,
-          rewardToken
-        })
-      });
-      const data = await res.json();
-      console.log('Approve response:', data);
-
-      if (data.success && data.job) {
-        closeApprovalModal();
-        const jobId = data.job.id || data.job._id;
-        showTerminal(jobId, `Airdrop ${mode} - ${weekId}`);
-      } else {
-        alert(data.error || 'Failed to start airdrop');
-        btn.disabled = false;
-        btn.textContent = mode === 'SIMULATED' ? 'Start Simulation' : 'Execute Airdrop';
-      }
-    } catch (e) {
-      alert('Error: ' + e.message);
-      btn.disabled = false;
-      btn.textContent = mode === 'SIMULATED' ? 'Start Simulation' : 'Execute Airdrop';
-    }
-  }
-
-  // Close modal on escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeApprovalModal();
-  });
-
-  // Close modal on backdrop click
-  document.getElementById('approvalModal')?.addEventListener('click', (e) => {
-    if (e.target.id === 'approvalModal') closeApprovalModal();
-  });
 </script>

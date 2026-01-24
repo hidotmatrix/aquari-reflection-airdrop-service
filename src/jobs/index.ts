@@ -31,7 +31,7 @@ export function stopAllJobs(): void {
 }
 
 // Re-export scheduler functions
-export { getSchedulerState, continueToNextCycle, manualStartWorkflow } from './scheduler';
+export { getSchedulerState } from './scheduler';
 
 // Re-export queue functions for manual triggering
 export {

@@ -19,6 +19,10 @@ export interface DistributionConfig {
   rewardPool: string;
   rewardToken: RewardToken;
   batchSize: number;
+  // Auto-airdrop tracking
+  autoApproved?: boolean;
+  walletBalanceUsed?: string;  // Wallet balance at time of auto-approval
+  autoApprovedAt?: Date;
 }
 
 export interface DistributionStats {

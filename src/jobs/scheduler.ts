@@ -1,31 +1,24 @@
 import { Db } from 'mongodb';
 import cron from 'node-cron';
-import { getConfig, getModeName, useFastCycles } from '../config/env';
+import { getConfig, getModeName } from '../config/env';
 import { logger } from '../utils/logger';
 import { startJob } from '../services/job.runner';
 import { getCurrentWeekId, getTestCycleId } from '../utils/week';
+import { getWalletTokenBalance } from '../services/blockchain.service';
+import { Distribution } from '../models';
 
 // ═══════════════════════════════════════════════════════════
-// Scheduler
+// Cron-Based Scheduler
 // ═══════════════════════════════════════════════════════════
 //
-// Fork Mode - Two options:
+// 4-Step Cron Schedule:
+//   START_SNAPSHOT_CRON → Take START snapshot
+//   END_SNAPSHOT_CRON   → Take END snapshot
+//   CALCULATE_CRON      → Calculate rewards
+//   AIRDROP_CRON        → Auto-airdrop (100% wallet balance)
 //
-//   Option A: Cron-based (set SNAPSHOT_CRON & CALCULATE_CRON)
-//     SNAPSHOT_CRON  → Snapshot (START + END back-to-back)
-//     CALCULATE_CRON → Calculate rewards
-//     Manual         → Airdrop (admin enters reward amount)
-//
-//   Option B: Interval-based (no cron set, use AUTO_START=true)
-//     Server Start → Snapshot START
-//     +10 min      → Snapshot END
-//     +5 min       → Calculate
-//     Manual       → Airdrop
-//
-// Production Mode (Weekly Cron):
-//   Sunday  23:59 UTC → Snapshot
-//   Monday  00:30 UTC → Calculate
-//   Manual            → Airdrop
+// Fork Mode: Configurable cron times (e.g., 5 min apart daily)
+// Production Mode: Weekly schedule (Sunday night)
 //
 // ═══════════════════════════════════════════════════════════
 
@@ -52,7 +45,6 @@ let schedulerState: SchedulerState = {
 };
 
 let scheduledTasks: cron.ScheduledTask[] = [];
-let fastCycleTimeouts: NodeJS.Timeout[] = [];
 
 /**
  * Get the current scheduler state
@@ -72,11 +64,8 @@ export function initializeScheduler(db: Db): void {
   logger.info(`Scheduler: ${getModeName()}`);
   logger.info('───────────────────────────────────────────────────────────');
 
-  if (useFastCycles()) {
-    initializeFastCycleScheduler(db);
-  } else {
-    initializeWeeklyCronScheduler(db);
-  }
+  // Initialize 4-cron scheduler
+  initializeFourCronScheduler(db);
 
   schedulerState.isRunning = true;
 }
@@ -91,10 +80,6 @@ export function stopScheduler(): void {
   scheduledTasks.forEach(task => task.stop());
   scheduledTasks = [];
 
-  // Clear fast cycle timeouts
-  fastCycleTimeouts.forEach(timeout => clearTimeout(timeout));
-  fastCycleTimeouts = [];
-
   schedulerState.isRunning = false;
   schedulerState.nextAction = 'stopped';
   schedulerState.nextActionTime = null;
@@ -103,214 +88,152 @@ export function stopScheduler(): void {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Fast Cycle Scheduler (Fork Mode)
+// 4-Cron Scheduler
 // ═══════════════════════════════════════════════════════════
 
-function initializeFastCycleScheduler(db: Db): void {
-  const config = getConfig();
-  const schedule = config.SCHEDULE;
-
-  // Check if cron-based scheduling is configured
-  if (schedule.snapshotCron || schedule.calculateCron) {
-    initializeForkCronScheduler(db);
-    return;
-  }
-
-  // Otherwise use interval-based scheduling
-  initializeForkIntervalScheduler(db);
-}
-
 /**
- * Fork Mode: Cron-based scheduling
- * Uses SNAPSHOT_CRON and CALCULATE_CRON from env
+ * 4-cron setup: START_SNAPSHOT → END_SNAPSHOT → CALCULATE → AIRDROP
  */
-function initializeForkCronScheduler(db: Db): void {
+function initializeFourCronScheduler(db: Db): void {
   const config = getConfig();
   const schedule = config.SCHEDULE;
 
-  logger.info('Fork Mode: Cron-based Schedule');
-  logger.info(`  Snapshot: ${schedule.snapshotCron || 'NOT SET'}`);
-  logger.info(`  Calculate: ${schedule.calculateCron || 'NOT SET'}`);
-  logger.info(`  Airdrop: Manual (admin approval required)`);
+  logger.info('4-Step Cron Schedule:');
+  logger.info(`  1. Start Snapshot: ${schedule.startSnapshotCron || 'NOT SET'}`);
+  logger.info(`  2. End Snapshot:   ${schedule.endSnapshotCron || 'NOT SET'}`);
+  logger.info(`  3. Calculate:      ${schedule.calculateCron || 'NOT SET'}`);
+  logger.info(`  4. Airdrop:        ${schedule.airdropCron || 'NOT SET'}`);
   logger.info('───────────────────────────────────────────────────────────');
 
-  // Snapshot cron job
-  if (schedule.snapshotCron) {
-    if (!cron.validate(schedule.snapshotCron)) {
-      logger.error(`❌ Invalid SNAPSHOT_CRON: "${schedule.snapshotCron}"`);
-      logger.error('   Cron format: "minute hour day month weekday"');
-      logger.error('   Examples: "30 14 * * *" (2:30 PM daily), "*/5 * * * *" (every 5 min)');
-      throw new Error(`Invalid SNAPSHOT_CRON expression: ${schedule.snapshotCron}`);
-    } else {
-      const snapshotTask = cron.schedule(schedule.snapshotCron, async () => {
-        schedulerState.currentCycle++;
-        const cycleId = getTestCycleId(schedulerState.currentCycle);
-
-        logger.info('');
-        logger.info(`${'═'.repeat(60)}`);
-        logger.info(`  CRON SNAPSHOT - CYCLE #${schedulerState.currentCycle} (${cycleId})`);
-        logger.info(`${'═'.repeat(60)}`);
-        logger.info('');
-
-        // Take START snapshot
-        logger.info(`[${cycleId}] Taking START snapshot...`);
-        schedulerState.nextAction = 'snapshot-start';
-        try {
-          await startJob(db, 'snapshot', `${cycleId}-start`);
-          schedulerState.lastSnapshot = new Date();
-          logger.info(`[${cycleId}] START snapshot complete`);
-        } catch (error) {
-          logger.error(`[${cycleId}] START snapshot failed:`, error);
-        }
-
-        // Take END snapshot (back-to-back for testing)
-        logger.info(`[${cycleId}] Taking END snapshot...`);
-        schedulerState.nextAction = 'snapshot-end';
-        try {
-          await startJob(db, 'snapshot', `${cycleId}-end`);
-          schedulerState.lastSnapshot = new Date();
-          logger.info(`[${cycleId}] END snapshot complete`);
-        } catch (error) {
-          logger.error(`[${cycleId}] END snapshot failed:`, error);
-        }
-
-        // Update state for next action
-        if (schedule.calculateCron) {
-          schedulerState.nextAction = 'waiting-for-calculate-cron';
-          schedulerState.nextActionTime = getNextCronTime(schedule.calculateCron);
-          logger.info(`[${cycleId}] Calculate will run at next cron: ${schedule.calculateCron}`);
-        } else {
-          schedulerState.nextAction = 'awaiting-manual-calculate';
-          schedulerState.nextActionTime = null;
-          logger.info(`[${cycleId}] No CALCULATE_CRON set - trigger manually from dashboard`);
-        }
-      });
-
-      scheduledTasks.push(snapshotTask);
-      logger.info(`✓ Snapshot cron scheduled: ${schedule.snapshotCron}`);
-    }
+  // Validate all 4 cron expressions are set
+  if (!schedule.startSnapshotCron || !schedule.endSnapshotCron ||
+      !schedule.calculateCron || !schedule.airdropCron) {
+    logger.error('All 4 cron expressions must be set:');
+    logger.error('  START_SNAPSHOT_CRON, END_SNAPSHOT_CRON, CALCULATE_CRON, AIRDROP_CRON');
+    throw new Error('Missing required cron configuration');
   }
 
-  // Calculate cron job
-  if (schedule.calculateCron) {
-    if (!cron.validate(schedule.calculateCron)) {
-      logger.error(`❌ Invalid CALCULATE_CRON: "${schedule.calculateCron}"`);
-      logger.error('   Cron format: "minute hour day month weekday"');
-      logger.error('   Examples: "45 14 * * *" (2:45 PM daily), "*/10 * * * *" (every 10 min)');
-      throw new Error(`Invalid CALCULATE_CRON expression: ${schedule.calculateCron}`);
-    } else {
-      const calcTask = cron.schedule(schedule.calculateCron, async () => {
-        const cycleId = getTestCycleId(schedulerState.currentCycle);
+  // Step 1: START Snapshot cron
+  validateAndScheduleCron(schedule.startSnapshotCron, 'START_SNAPSHOT_CRON', async () => {
+    schedulerState.currentCycle++;
+    const cycleId = config.MODE === 'fork'
+      ? getTestCycleId(schedulerState.currentCycle)
+      : getCurrentWeekId();
 
-        logger.info('');
-        logger.info(`[${cycleId}] CRON CALCULATE - Running calculation...`);
+    logger.info('');
+    logger.info(`${'═'.repeat(60)}`);
+    logger.info(`  CYCLE #${schedulerState.currentCycle} - START SNAPSHOT (${cycleId})`);
+    logger.info(`${'═'.repeat(60)}`);
 
-        schedulerState.nextAction = 'calculation';
-        try {
-          await startJob(db, 'calculation', cycleId);
-          schedulerState.lastCalculation = new Date();
-          logger.info(`[${cycleId}] Calculation complete`);
-        } catch (error) {
-          logger.error(`[${cycleId}] Calculation failed:`, error);
-        }
-
-        // Airdrop is always manual
-        schedulerState.nextAction = 'awaiting-approval';
-        schedulerState.nextActionTime = null;
-
-        logger.info('');
-        logger.info(`${'─'.repeat(60)}`);
-        logger.info(`[${cycleId}] READY FOR AIRDROP`);
-        logger.info(`  Visit: http://localhost:${config.PORT}/admin/distributions`);
-        logger.info(`  Enter reward amount and approve the airdrop`);
-        logger.info(`${'─'.repeat(60)}`);
-        logger.info('');
-      });
-
-      scheduledTasks.push(calcTask);
-      logger.info(`✓ Calculate cron scheduled: ${schedule.calculateCron}`);
+    schedulerState.nextAction = 'snapshot-start';
+    try {
+      await startJob(db, 'snapshot', `${cycleId}-start`);
+      schedulerState.lastSnapshot = new Date();
+      logger.info(`[${cycleId}] START snapshot complete`);
+    } catch (error) {
+      logger.error(`[${cycleId}] START snapshot failed:`, error);
     }
-  }
+
+    schedulerState.nextAction = 'waiting-for-end-snapshot';
+    schedulerState.nextActionTime = getNextCronTime(schedule.endSnapshotCron!);
+  });
+  logger.info(`  Start Snapshot cron scheduled`);
+
+  // Step 2: END Snapshot cron
+  validateAndScheduleCron(schedule.endSnapshotCron, 'END_SNAPSHOT_CRON', async () => {
+    const cycleId = config.MODE === 'fork'
+      ? getTestCycleId(schedulerState.currentCycle)
+      : getCurrentWeekId();
+
+    logger.info('');
+    logger.info(`[${cycleId}] END SNAPSHOT - Taking end snapshot...`);
+
+    schedulerState.nextAction = 'snapshot-end';
+    try {
+      await startJob(db, 'snapshot', `${cycleId}-end`);
+      schedulerState.lastSnapshot = new Date();
+      logger.info(`[${cycleId}] END snapshot complete`);
+    } catch (error) {
+      logger.error(`[${cycleId}] END snapshot failed:`, error);
+    }
+
+    schedulerState.nextAction = 'waiting-for-calculate';
+    schedulerState.nextActionTime = getNextCronTime(schedule.calculateCron!);
+  });
+  logger.info(`  End Snapshot cron scheduled`);
+
+  // Step 3: Calculate cron
+  validateAndScheduleCron(schedule.calculateCron, 'CALCULATE_CRON', async () => {
+    const cycleId = config.MODE === 'fork'
+      ? getTestCycleId(schedulerState.currentCycle)
+      : getCurrentWeekId();
+
+    logger.info('');
+    logger.info(`[${cycleId}] CALCULATE - Running calculation...`);
+
+    schedulerState.nextAction = 'calculation';
+    try {
+      await startJob(db, 'calculation', cycleId);
+      schedulerState.lastCalculation = new Date();
+      logger.info(`[${cycleId}] Calculation complete`);
+    } catch (error) {
+      logger.error(`[${cycleId}] Calculation failed:`, error);
+    }
+
+    schedulerState.nextAction = 'waiting-for-airdrop';
+    schedulerState.nextActionTime = getNextCronTime(schedule.airdropCron!);
+  });
+  logger.info(`  Calculate cron scheduled`);
+
+  // Step 4: Airdrop cron (auto-approve with 100% wallet balance)
+  validateAndScheduleCron(schedule.airdropCron, 'AIRDROP_CRON', async () => {
+    const cycleId = config.MODE === 'fork'
+      ? getTestCycleId(schedulerState.currentCycle)
+      : getCurrentWeekId();
+
+    logger.info('');
+    logger.info(`[${cycleId}] AIRDROP - Auto-approving with wallet balance...`);
+
+    await autoApproveAndAirdrop(db, cycleId);
+
+    // Set next action for next cycle
+    schedulerState.nextAction = 'waiting-for-start-snapshot';
+    schedulerState.nextActionTime = getNextCronTime(schedule.startSnapshotCron!);
+  });
+  logger.info(`  Airdrop cron scheduled`);
 
   // Set initial state
-  schedulerState.nextAction = 'waiting-for-snapshot-cron';
-  if (schedule.snapshotCron) {
-    schedulerState.nextActionTime = getNextCronTime(schedule.snapshotCron);
-  }
+  schedulerState.nextAction = 'waiting-for-start-snapshot';
+  schedulerState.nextActionTime = getNextCronTime(schedule.startSnapshotCron);
 
   logger.info('');
-  logger.info('📅 Cron scheduler ready - waiting for scheduled times');
+  logger.info('4-step cron scheduler ready');
   if (schedulerState.nextActionTime) {
-    logger.info(`   Next snapshot at: ${schedulerState.nextActionTime.toLocaleString()}`);
+    logger.info(`   Next: Start Snapshot at ${schedulerState.nextActionTime.toLocaleString()}`);
   }
   logger.info('');
 }
 
 /**
- * Fork Mode: Interval-based scheduling (original behavior)
- * Uses AUTO_START and setTimeout intervals
+ * Helper to validate and schedule a cron job
  */
-function initializeForkIntervalScheduler(db: Db): void {
-  const config = getConfig();
-  const schedule = config.SCHEDULE;
-
-  const totalCycleTime = schedule.snapshotIntervalMinutes + schedule.calculateDelayMinutes +
-    (schedule.autoApprove ? schedule.airdropDelayMinutes : 0);
-
-  logger.info('Fork Mode: Interval-based Schedule');
-  logger.info(`  Auto-Start: ${schedule.autoStart ? 'YES' : 'NO (manual trigger required)'}`);
-  if (schedule.startDelayMinutes > 0) {
-    logger.info(`  Start Delay: ${schedule.startDelayMinutes} minutes`);
-  }
-  logger.info(`  0:00  - Snapshot START`);
-  logger.info(`  ${schedule.snapshotIntervalMinutes}:00 - Snapshot END`);
-  logger.info(`  ${schedule.snapshotIntervalMinutes + schedule.calculateDelayMinutes}:00 - Calculate rewards`);
-  logger.info(`  ??:?? - Airdrop (manual approval required)`);
-  logger.info('───────────────────────────────────────────────────────────');
-
-  // Check if auto-start is enabled
-  if (!schedule.autoStart) {
-    schedulerState.nextAction = 'waiting-for-trigger';
-    schedulerState.nextActionTime = null;
-    logger.info('');
-    logger.info('⏸️  Scheduler initialized but NOT auto-starting');
-    logger.info('   Use the admin dashboard to manually start the workflow');
-    logger.info('');
-    return;
+function validateAndScheduleCron(cronExpr: string, name: string, handler: () => Promise<void>): void {
+  if (!cron.validate(cronExpr)) {
+    logger.error(`Invalid ${name}: "${cronExpr}"`);
+    logger.error('   Cron format: "minute hour day month weekday"');
+    throw new Error(`Invalid ${name} expression: ${cronExpr}`);
   }
 
-  // Check if there's a start delay
-  if (schedule.startDelayMinutes > 0) {
-    const startDelayMs = schedule.startDelayMinutes * 60 * 1000;
-    const startTime = new Date(Date.now() + startDelayMs);
-
-    schedulerState.nextAction = 'starting-soon';
-    schedulerState.nextActionTime = startTime;
-
-    logger.info('');
-    logger.info(`⏳ Workflow will start in ${schedule.startDelayMinutes} minutes at ${startTime.toLocaleTimeString()}`);
-    logger.info('');
-
-    const delayTimeout = setTimeout(() => {
-      logger.info('Start delay complete - beginning first cycle');
-      schedulerState.currentCycle = 1;
-      startFastCycle(db);
-    }, startDelayMs);
-
-    fastCycleTimeouts.push(delayTimeout);
-    return;
-  }
-
-  // Start first cycle immediately
-  schedulerState.currentCycle = 1;
-  startFastCycle(db);
+  const task = cron.schedule(cronExpr, handler);
+  scheduledTasks.push(task);
 }
 
 /**
- * Get next run time for a cron expression (simple implementation)
+ * Get next run time for a cron expression
  * Handles common patterns: "M H * * *" (specific time daily)
  */
-function getNextCronTime(cronExpr: string): Date | null {
+function getNextCronTime(cronExpr: string | null): Date | null {
+  if (!cronExpr) return null;
   try {
     const parts = cronExpr.trim().split(/\s+/);
     if (parts.length !== 5) return null;
@@ -321,7 +244,7 @@ function getNextCronTime(cronExpr: string): Date | null {
     const month = parts[3];
     const dayOfWeek = parts[4];
 
-    // Only handle simple daily patterns like "30 14 * * *"
+    // Handle daily patterns like "30 14 * * *"
     if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*' && minute && hour) {
       const targetMinute = parseInt(minute, 10);
       const targetHour = parseInt(hour, 10);
@@ -340,6 +263,29 @@ function getNextCronTime(cronExpr: string): Date | null {
       return next;
     }
 
+    // Handle weekly patterns like "30 23 * * 0" (Sunday at 23:30)
+    if (dayOfMonth === '*' && month === '*' && dayOfWeek !== '*' && minute && hour && dayOfWeek) {
+      const targetMinute = parseInt(minute, 10);
+      const targetHour = parseInt(hour, 10);
+      const targetDayOfWeek = parseInt(dayOfWeek, 10);
+
+      if (isNaN(targetMinute) || isNaN(targetHour) || isNaN(targetDayOfWeek)) return null;
+
+      const now = new Date();
+      const next = new Date();
+      next.setHours(targetHour, targetMinute, 0, 0);
+
+      const currentDayOfWeek = now.getDay();
+      let daysToAdd = targetDayOfWeek - currentDayOfWeek;
+
+      if (daysToAdd < 0 || (daysToAdd === 0 && next <= now)) {
+        daysToAdd += 7;
+      }
+
+      next.setDate(next.getDate() + daysToAdd);
+      return next;
+    }
+
     // For complex patterns, return null (dashboard shows cron expression)
     return null;
   } catch {
@@ -347,281 +293,77 @@ function getNextCronTime(cronExpr: string): Date | null {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+// Auto-Approve and Airdrop
+// ═══════════════════════════════════════════════════════════
+
 /**
- * Start a fast test cycle
+ * Auto-approve airdrop using 100% of wallet token balance
+ * Called after calculation completes
  */
-async function startFastCycle(db: Db): Promise<void> {
-  const config = getConfig();
-  const schedule = config.SCHEDULE;
-  const cycleId = getTestCycleId(schedulerState.currentCycle);
-
+async function autoApproveAndAirdrop(db: Db, weekId: string): Promise<boolean> {
   logger.info('');
-  logger.info(`${'═'.repeat(60)}`);
-  logger.info(`  CYCLE #${schedulerState.currentCycle} STARTED (${cycleId})`);
-  logger.info(`${'═'.repeat(60)}`);
-  logger.info('');
+  logger.info(`${'─'.repeat(60)}`);
+  logger.info(`[${weekId}] AUTO-AIRDROP - Reading wallet balance...`);
 
-  // Step 1: Take START snapshot immediately
-  schedulerState.nextAction = 'snapshot-start';
-  schedulerState.nextActionTime = new Date();
-
-  logger.info(`[${cycleId}] Taking START snapshot...`);
   try {
-    await startJob(db, 'snapshot', `${cycleId}-start`);
-    schedulerState.lastSnapshot = new Date();
-    logger.info(`[${cycleId}] START snapshot complete`);
+    // Get current wallet token balance (real-time)
+    const walletBalance = await getWalletTokenBalance();
+    const walletBalanceBigInt = BigInt(walletBalance);
+
+    if (walletBalanceBigInt === 0n) {
+      logger.warn(`[${weekId}] Wallet balance is 0 - skipping airdrop`);
+      schedulerState.nextAction = 'skipped-no-balance';
+      return false;
+    }
+
+    const formattedBalance = (Number(walletBalanceBigInt) / 1e18).toLocaleString('en-US');
+    logger.info(`[${weekId}] Wallet balance: ${formattedBalance} AQUARI`);
+    logger.info(`[${weekId}] Using 100% as reward pool`);
+
+    // Find the distribution for this week
+    const distribution = await db.collection<Distribution>('distributions').findOne({
+      weekId,
+      status: 'ready'
+    });
+
+    if (!distribution) {
+      logger.error(`[${weekId}] No ready distribution found for auto-approval`);
+      return false;
+    }
+
+    // Update distribution with wallet balance as reward pool
+    await db.collection<Distribution>('distributions').updateOne(
+      { _id: distribution._id },
+      {
+        $set: {
+          'config.rewardPool': walletBalance,
+          'config.autoApproved': true,
+          'config.walletBalanceUsed': walletBalance,
+          'config.autoApprovedAt': new Date(),
+          status: 'processing',
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    logger.info(`[${weekId}] Distribution auto-approved with ${formattedBalance} AQUARI`);
+    logger.info(`${'─'.repeat(60)}`);
+    logger.info('');
+
+    // Start airdrop job
+    schedulerState.nextAction = 'airdrop';
+    await startJob(db, 'airdrop', weekId);
+    schedulerState.lastAirdrop = new Date();
+
+    logger.info(`[${weekId}] Airdrop complete`);
+    return true;
+
   } catch (error) {
-    logger.error(`[${cycleId}] START snapshot failed:`, error);
+    logger.error(`[${weekId}] Auto-airdrop failed:`, error);
+    schedulerState.nextAction = 'airdrop-failed';
+    return false;
   }
-
-  // Step 2: Schedule END snapshot
-  const endSnapshotDelayMs = schedule.snapshotIntervalMinutes * 60 * 1000;
-  const endSnapshotTime = new Date(Date.now() + endSnapshotDelayMs);
-
-  schedulerState.nextAction = 'snapshot-end';
-  schedulerState.nextActionTime = endSnapshotTime;
-
-  logger.info(`[${cycleId}] END snapshot scheduled for ${endSnapshotTime.toLocaleTimeString()} (in ${schedule.snapshotIntervalMinutes} min)`);
-
-  const endSnapshotTimeout = setTimeout(async () => {
-    logger.info(`[${cycleId}] Taking END snapshot...`);
-    try {
-      await startJob(db, 'snapshot', `${cycleId}-end`);
-      schedulerState.lastSnapshot = new Date();
-      logger.info(`[${cycleId}] END snapshot complete`);
-    } catch (error) {
-      logger.error(`[${cycleId}] END snapshot failed:`, error);
-    }
-
-    // Step 3: Schedule calculation
-    const calcDelayMs = schedule.calculateDelayMinutes * 60 * 1000;
-    const calcTime = new Date(Date.now() + calcDelayMs);
-
-    schedulerState.nextAction = 'calculation';
-    schedulerState.nextActionTime = calcTime;
-
-    logger.info(`[${cycleId}] Calculation scheduled for ${calcTime.toLocaleTimeString()} (in ${schedule.calculateDelayMinutes} min)`);
-
-    const calcTimeout = setTimeout(async () => {
-      logger.info(`[${cycleId}] Calculating rewards...`);
-      try {
-        await startJob(db, 'calculation', cycleId);
-        schedulerState.lastCalculation = new Date();
-        logger.info(`[${cycleId}] Calculation complete`);
-      } catch (error) {
-        logger.error(`[${cycleId}] Calculation failed:`, error);
-      }
-
-      // Step 4: Airdrop (auto or manual)
-      if (schedule.autoApprove) {
-        const airdropDelayMs = schedule.airdropDelayMinutes * 60 * 1000;
-        const airdropTime = new Date(Date.now() + airdropDelayMs);
-
-        schedulerState.nextAction = 'airdrop';
-        schedulerState.nextActionTime = airdropTime;
-
-        logger.info(`[${cycleId}] Airdrop scheduled for ${airdropTime.toLocaleTimeString()} (in ${schedule.airdropDelayMinutes} min, auto-approve)`);
-
-        const airdropTimeout = setTimeout(async () => {
-          logger.info(`[${cycleId}] Executing airdrop (auto-approved)...`);
-          try {
-            await startJob(db, 'airdrop', cycleId);
-            schedulerState.lastAirdrop = new Date();
-            logger.info(`[${cycleId}] Airdrop complete`);
-          } catch (error) {
-            logger.error(`[${cycleId}] Airdrop failed:`, error);
-          }
-
-          // Start next cycle
-          logger.info('');
-          schedulerState.currentCycle++;
-          startFastCycle(db);
-        }, airdropDelayMs);
-
-        fastCycleTimeouts.push(airdropTimeout);
-      } else {
-        // Wait for manual approval
-        schedulerState.nextAction = 'awaiting-approval';
-        schedulerState.nextActionTime = null;
-
-        logger.info('');
-        logger.info(`${'─'.repeat(60)}`);
-        logger.info(`[${cycleId}] WAITING FOR MANUAL APPROVAL`);
-        logger.info(`  Visit: http://localhost:${config.PORT}/admin/distributions`);
-        logger.info(`  Approve the distribution to execute airdrop`);
-        logger.info(`${'─'.repeat(60)}`);
-        logger.info('');
-      }
-    }, calcDelayMs);
-
-    fastCycleTimeouts.push(calcTimeout);
-  }, endSnapshotDelayMs);
-
-  fastCycleTimeouts.push(endSnapshotTimeout);
-}
-
-/**
- * Continue to next fast cycle after manual approval
- */
-export function continueToNextCycle(db: Db): void {
-  if (!useFastCycles()) return;
-
-  schedulerState.lastAirdrop = new Date();
-  schedulerState.currentCycle++;
-
-  logger.info('Manual approval received - starting next cycle');
-  startFastCycle(db);
-}
-
-/**
- * Manually start the workflow (when AUTO_START=false)
- */
-export function manualStartWorkflow(db: Db): { success: boolean; message: string } {
-  if (!useFastCycles()) {
-    return { success: false, message: 'Manual start only available in fork mode' };
-  }
-
-  if (schedulerState.nextAction !== 'waiting-for-trigger' && schedulerState.nextAction !== 'stopped') {
-    return { success: false, message: `Workflow already running (status: ${schedulerState.nextAction})` };
-  }
-
-  logger.info('');
-  logger.info('🚀 Manual workflow start triggered from admin dashboard');
-  logger.info('');
-
-  schedulerState.currentCycle = 1;
-  startFastCycle(db);
-
-  return { success: true, message: 'Workflow started successfully' };
-}
-
-// ═══════════════════════════════════════════════════════════
-// Weekly Cron Scheduler (Production Mode)
-// ═══════════════════════════════════════════════════════════
-
-function initializeWeeklyCronScheduler(db: Db): void {
-  logger.info('Weekly Cron Schedule (UTC):');
-  logger.info('  Sunday  23:59 - Snapshot');
-  logger.info('  Monday  00:30 - Calculate rewards');
-  logger.info('  Manual        - Airdrop approval');
-  logger.info('───────────────────────────────────────────────────────────');
-
-  // Sunday 23:59 UTC - Take snapshot
-  const snapshotTask = cron.schedule('59 23 * * 0', async () => {
-    const weekId = getCurrentWeekId();
-    logger.info(`[Cron] Taking snapshot for week ${weekId}`);
-
-    schedulerState.nextAction = 'snapshot';
-    await startJob(db, 'snapshot', weekId);
-    schedulerState.lastSnapshot = new Date();
-
-    schedulerState.nextAction = 'calculation';
-    schedulerState.nextActionTime = getNextMonday0030();
-    logNextAction();
-  }, {
-    timezone: 'UTC'
-  });
-
-  // Monday 00:30 UTC - Calculate rewards
-  const calcTask = cron.schedule('30 0 * * 1', async () => {
-    const weekId = getCurrentWeekId();
-    logger.info(`[Cron] Calculating rewards for week ${weekId}`);
-
-    schedulerState.nextAction = 'calculation';
-    await startJob(db, 'calculation', weekId);
-    schedulerState.lastCalculation = new Date();
-
-    schedulerState.nextAction = 'awaiting-approval';
-    schedulerState.nextActionTime = null;
-    logger.info('[Scheduler] Awaiting manual airdrop approval at /admin/distributions');
-  }, {
-    timezone: 'UTC'
-  });
-
-  scheduledTasks.push(snapshotTask, calcTask);
-
-  // Set initial state
-  updateNextCronAction();
-  logNextAction();
-}
-
-function updateNextCronAction(): void {
-  const now = new Date();
-  const dayOfWeek = now.getUTCDay();
-  const hour = now.getUTCHours();
-  const minute = now.getUTCMinutes();
-
-  if ((dayOfWeek === 0 && (hour > 23 || (hour === 23 && minute >= 59))) ||
-      (dayOfWeek === 1 && (hour === 0 && minute < 30))) {
-    schedulerState.nextAction = 'calculation';
-    schedulerState.nextActionTime = getNextMonday0030();
-  } else if (dayOfWeek === 1 && (hour > 0 || (hour === 0 && minute >= 30))) {
-    schedulerState.nextAction = 'awaiting-approval';
-    schedulerState.nextActionTime = null;
-  } else {
-    schedulerState.nextAction = 'snapshot';
-    schedulerState.nextActionTime = getNextSunday2359();
-  }
-}
-
-function logNextAction(): void {
-  if (schedulerState.nextActionTime) {
-    const timeStr = schedulerState.nextActionTime.toISOString();
-    const localStr = schedulerState.nextActionTime.toLocaleString();
-    logger.info(`[Scheduler] Next: ${schedulerState.nextAction} at ${timeStr} (${localStr})`);
-  } else if (schedulerState.nextAction === 'awaiting-approval') {
-    logger.info('[Scheduler] Next: Awaiting manual airdrop approval');
-  }
-}
-
-function getNextSunday2359(): Date {
-  const now = new Date();
-  const dayOfWeek = now.getUTCDay();
-  const hour = now.getUTCHours();
-  const minute = now.getUTCMinutes();
-
-  let daysToAdd = 0;
-
-  if (dayOfWeek === 0) {
-    if (hour < 23 || (hour === 23 && minute < 59)) {
-      daysToAdd = 0;
-    } else {
-      daysToAdd = 7;
-    }
-  } else {
-    daysToAdd = 7 - dayOfWeek;
-  }
-
-  const target = new Date(now);
-  target.setUTCDate(now.getUTCDate() + daysToAdd);
-  target.setUTCHours(23, 59, 0, 0);
-  return target;
-}
-
-function getNextMonday0030(): Date {
-  const now = new Date();
-  const dayOfWeek = now.getUTCDay();
-  const hour = now.getUTCHours();
-  const minute = now.getUTCMinutes();
-
-  let daysToAdd = 0;
-
-  if (dayOfWeek === 1) {
-    if (hour === 0 && minute < 30) {
-      daysToAdd = 0;
-    } else {
-      daysToAdd = 7;
-    }
-  } else if (dayOfWeek === 0) {
-    daysToAdd = 1;
-  } else {
-    daysToAdd = 8 - dayOfWeek;
-  }
-
-  const target = new Date(now);
-  target.setUTCDate(now.getUTCDate() + daysToAdd);
-  target.setUTCHours(0, 30, 0, 0);
-  return target;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -644,9 +386,4 @@ export async function triggerAirdrop(db: Db, weekId: string): Promise<void> {
   logger.info(`[Manual] Triggering airdrop for ${weekId}`);
   await startJob(db, 'airdrop', weekId);
   schedulerState.lastAirdrop = new Date();
-
-  // Continue to next cycle if in fast mode
-  if (useFastCycles()) {
-    continueToNextCycle(db);
-  }
 }

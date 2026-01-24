@@ -237,28 +237,35 @@ CONNECTIVITY CHECKS:
 All connectivity checks passed
 ```
 
-### Step 6: Fund Test Wallet with AQUARI Tokens
+### Step 6: Fund Test Wallet
 
-The fork uses Anvil's test account #9. Fund it with AQUARI tokens:
+The fork uses Anvil's test account #9. Fund it with ETH and AQUARI tokens.
+
+> **Full guide:** See [docs/fork_fund.md](docs/fork_fund.md) for detailed instructions and troubleshooting.
 
 ```bash
-# Find a whale address (check BaseScan for large holders)
-WHALE=0x... # Replace with actual whale address
+# Fund with ETH (100 ETH)
+cast rpc anvil_setBalance \
+  0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199 \
+  0x56BC75E2D63100000 \
+  --rpc-url http://localhost:8545
 
-# Impersonate the whale
-cast rpc anvil_impersonateAccount "$WHALE" --rpc-url http://localhost:8545
+# Fund with AQUARI (100k tokens)
+cast rpc anvil_impersonateAccount 0x187ED96248Bbbbf4D5b059187e030B7511b67801 --rpc-url http://localhost:8545
 
-# Transfer AQUARI to test wallet (500k tokens)
 cast send 0x7F0E9971D3320521Fc88F863E173a4cddBB051bA \
   "transfer(address,uint256)" \
   0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199 \
-  500000000000000000000000 \
-  --from "$WHALE" \
+  100000000000000000000000 \
+  --from 0x187ED96248Bbbbf4D5b059187e030B7511b67801 \
   --unlocked \
   --rpc-url http://localhost:8545
 
-# Stop impersonating
-cast rpc anvil_stopImpersonatingAccount "$WHALE" --rpc-url http://localhost:8545
+cast rpc anvil_stopImpersonatingAccount 0x187ED96248Bbbbf4D5b059187e030B7511b67801 --rpc-url http://localhost:8545
+
+# Verify balances
+cast balance 0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199 --ether --rpc-url http://localhost:8545
+cast call 0x7F0E9971D3320521Fc88F863E173a4cddBB051bA "balanceOf(address)(uint256)" 0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199 --rpc-url http://localhost:8545
 ```
 
 ### Step 7: Scan Bot-Restricted Addresses

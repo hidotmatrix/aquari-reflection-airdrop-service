@@ -569,9 +569,11 @@ async function runAirdropJob(ctx: JobContext, weekId: string, jobId: string): Pr
         const batchTotal = BigInt(batch.totalAmount);
         totalSent += batchTotal;
 
+        const batchAmountFormatted = (batchTotal / BigInt(10 ** 18)).toString();
         await ctx.log(`[SIMULATED] Batch ${batch.batchNumber} completed`, {
           txHash: fakeTxHash.slice(0, 18) + '...',
           recipients: batch.recipientCount,
+          amount: `${batchAmountFormatted} AQUARI`,
         });
 
         successfulBatches++;
@@ -634,10 +636,12 @@ async function runAirdropJob(ctx: JobContext, weekId: string, jobId: string): Pr
 
         totalSent += batchTotal;
 
+        const batchAmountFormatted = (batchTotal / BigInt(10 ** 18)).toString();
         await ctx.log(`Batch ${batch.batchNumber} completed`, {
           txHash: execution.txHash,
           gasUsed: execution.gasUsed,
           recipients: batch.recipientCount,
+          amount: `${batchAmountFormatted} AQUARI`,
         });
 
         successfulBatches++;

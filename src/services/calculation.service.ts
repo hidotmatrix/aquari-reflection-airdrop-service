@@ -16,6 +16,7 @@ import {
   RewardToken,
 } from '../models';
 import { getHolderBalanceMap } from './snapshot.service';
+import { getWalletTokenBalance, initializeBlockchain, isBlockchainReady } from './blockchain.service';
 
 // ═══════════════════════════════════════════════════════════
 // Calculation Service
@@ -172,10 +173,22 @@ export async function calculateRewards(
     await db.collection<Recipient>('recipients').deleteMany({ distributionId });
 
     // Calculate and create recipient records
-    // Use default reward pool as placeholder - actual rewards set at approval time
-    // Default: 1000 AQUARI (1000 * 10^18 wei)
-    const DEFAULT_REWARD_POOL = '1000000000000000000000';
-    const rewardPool = BigInt(DEFAULT_REWARD_POOL);
+    // Get wallet token balance as the reward pool
+    if (!isBlockchainReady()) {
+      initializeBlockchain();
+    }
+
+    let rewardPool: bigint;
+    if (isBlockchainReady()) {
+      const walletBalance = await getWalletTokenBalance();
+      rewardPool = BigInt(walletBalance);
+      logger.info(`Using wallet balance as reward pool: ${formatTokenAmount(walletBalance, 18, 2)} ${config.REWARD_TOKEN}`);
+    } else {
+      // Fallback to 1000 AQUARI if blockchain not available
+      const DEFAULT_REWARD_POOL = '1000000000000000000000';
+      rewardPool = BigInt(DEFAULT_REWARD_POOL);
+      logger.warn('Blockchain not initialized, using default 1000 AQUARI reward pool');
+    }
     const recipients: Recipient[] = [];
     const batchRecipients: BatchRecipient[] = [];
     let totalDistributed = 0n;

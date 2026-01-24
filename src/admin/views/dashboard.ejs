@@ -607,7 +607,20 @@ async function pollJobStatus() {
                           log.level === 'warn' ? 'text-yellow-400' :
                           log.level === 'success' ? 'text-emerald-400' : 'text-gray-300';
         div.className = colorClass;
-        div.innerHTML = `<span class="text-gray-600">[${time}]</span> ${escapeHtml(log.message)}`;
+
+        // Format log with data if available (e.g., batch amount)
+        let logText = escapeHtml(log.message);
+        if (log.data && typeof log.data === 'object') {
+          if (log.data.amount) {
+            logText += ` <span class="text-cyan-400">(${escapeHtml(log.data.amount)})</span>`;
+          }
+          if (log.data.txHash) {
+            const shortTx = log.data.txHash.slice(0, 10) + '...' + log.data.txHash.slice(-6);
+            logText += ` <span class="text-gray-500">[${shortTx}]</span>`;
+          }
+        }
+
+        div.innerHTML = `<span class="text-gray-600">[${time}]</span> ${logText}`;
         output.appendChild(div);
       });
       output.scrollTop = output.scrollHeight;

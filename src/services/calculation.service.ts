@@ -16,6 +16,7 @@ import {
   RewardToken,
 } from '../models';
 import { getHolderBalanceMap } from './snapshot.service';
+import { getWalletTokenBalance, initializeBlockchain, isBlockchainReady } from './blockchain.service';
 
 // ═══════════════════════════════════════════════════════════
 // Calculation Service
@@ -29,23 +30,23 @@ export interface CalculationResult {
 }
 
 /**
- * Calculate rewards for a week based on start and end snapshots
+ * Calculate rewards based on previous and current snapshots
  */
 export async function calculateRewards(
   db: Db,
   weekId: string,
-  startSnapshotId: ObjectId,
-  endSnapshotId: ObjectId
+  previousSnapshotId: ObjectId,
+  currentSnapshotId: ObjectId
 ): Promise<CalculationResult> {
   const config = getConfig();
   const startTime = Date.now();
 
-  logger.info(`Calculating rewards for week ${weekId}`);
+  logger.info(`Calculating rewards for cycle ${weekId}`);
 
   // Check if distribution already exists
   const existing = await db.collection<Distribution>('distributions').findOne({ weekId });
   if (existing && existing.status === 'completed') {
-    throw new Error(`Distribution for week ${weekId} already exists`);
+    throw new Error(`Distribution for cycle ${weekId} already exists`);
   }
 
   // Get system config (or create default)
@@ -58,8 +59,8 @@ export async function calculateRewards(
   // Create distribution record (reward pool is TBD - admin sets on approval)
   const distribution = createDistribution({
     weekId,
-    startSnapshotId,
-    endSnapshotId,
+    previousSnapshotId,
+    currentSnapshotId,
     config: {
       minBalance: config.MIN_BALANCE,
       rewardPool: '0', // TBD - admin sets this on approval
@@ -83,20 +84,20 @@ export async function calculateRewards(
 
   try {
     // Get holder balance maps for both snapshots
-    const startSnapshot = await db.collection('snapshots').findOne({ _id: startSnapshotId });
-    const endSnapshot = await db.collection('snapshots').findOne({ _id: endSnapshotId });
+    const previousSnapshot = await db.collection('snapshots').findOne({ _id: previousSnapshotId });
+    const currentSnapshot = await db.collection('snapshots').findOne({ _id: currentSnapshotId });
 
-    if (!startSnapshot || !endSnapshot) {
-      throw new Error('Start or end snapshot not found');
+    if (!previousSnapshot || !currentSnapshot) {
+      throw new Error('Previous or current snapshot not found');
     }
 
-    const [startBalances, endBalances] = await Promise.all([
-      getHolderBalanceMap(db, startSnapshot.weekId),
-      getHolderBalanceMap(db, endSnapshot.weekId),
+    const [previousBalances, currentBalances] = await Promise.all([
+      getHolderBalanceMap(db, previousSnapshot.weekId),
+      getHolderBalanceMap(db, currentSnapshot.weekId),
     ]);
 
     // Get all unique addresses from both snapshots
-    const allAddresses = new Set([...startBalances.keys(), ...endBalances.keys()]);
+    const allAddresses = new Set([...previousBalances.keys(), ...currentBalances.keys()]);
 
     // Get excluded addresses from config (LPs, foundation, etc.)
     const configExcludedSet = new Set(
@@ -121,8 +122,8 @@ export async function calculateRewards(
     // Calculate eligible holders
     const eligibleHolders: Array<{
       address: string;
-      startBalance: string;
-      endBalance: string;
+      previousBalance: string;
+      currentBalance: string;
       minBalance: string;
     }> = [];
 
@@ -143,20 +144,20 @@ export async function calculateRewards(
         continue;
       }
 
-      const startBalance = startBalances.get(address) ?? '0';
-      const endBalance = endBalances.get(address) ?? '0';
+      const previousBalance = previousBalances.get(address) ?? '0';
+      const currentBalance = currentBalances.get(address) ?? '0';
 
       const eligibility = calculateEligibility(
-        startBalance,
-        endBalance,
+        previousBalance,
+        currentBalance,
         config.MIN_BALANCE
       );
 
       if (eligibility.isEligible) {
         eligibleHolders.push({
           address,
-          startBalance,
-          endBalance,
+          previousBalance,
+          currentBalance,
           minBalance: eligibility.minBalance,
         });
         totalEligibleBalance += BigInt(eligibility.minBalance);
@@ -172,10 +173,22 @@ export async function calculateRewards(
     await db.collection<Recipient>('recipients').deleteMany({ distributionId });
 
     // Calculate and create recipient records
-    // Use default reward pool as placeholder - actual rewards set at approval time
-    // Default: 1000 AQUARI (1000 * 10^18 wei)
-    const DEFAULT_REWARD_POOL = '1000000000000000000000';
-    const rewardPool = BigInt(DEFAULT_REWARD_POOL);
+    // Get wallet token balance as the reward pool
+    if (!isBlockchainReady()) {
+      initializeBlockchain();
+    }
+
+    let rewardPool: bigint;
+    if (isBlockchainReady()) {
+      const walletBalance = await getWalletTokenBalance();
+      rewardPool = BigInt(walletBalance);
+      logger.info(`Using wallet balance as reward pool: ${formatTokenAmount(walletBalance, 18, 2)} ${config.REWARD_TOKEN}`);
+    } else {
+      // Fallback to 1000 AQUARI if blockchain not available
+      const DEFAULT_REWARD_POOL = '1000000000000000000000';
+      rewardPool = BigInt(DEFAULT_REWARD_POOL);
+      logger.warn('Blockchain not initialized, using default 1000 AQUARI reward pool');
+    }
     const recipients: Recipient[] = [];
     const batchRecipients: BatchRecipient[] = [];
     let totalDistributed = 0n;
@@ -196,8 +209,8 @@ export async function calculateRewards(
           weekId,
           address: holder.address,
           balances: {
-            start: holder.startBalance,
-            end: holder.endBalance,
+            previous: holder.previousBalance,
+            current: holder.currentBalance,
             min: holder.minBalance,
           },
           reward: reward.toString(),

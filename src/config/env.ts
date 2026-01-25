@@ -23,16 +23,10 @@ interface NetworkConfig {
 
 interface ScheduleConfig {
   useFastCycles: boolean;
-  autoStart: boolean;
-  startDelayMinutes: number;
-  // Cron-based scheduling (optional - if set, uses cron instead of intervals)
-  snapshotCron: string | null;
-  calculateCron: string | null;
-  // Interval-based scheduling (used when cron not set)
-  snapshotIntervalMinutes: number;
-  calculateDelayMinutes: number;
-  airdropDelayMinutes: number;
-  autoApprove: boolean;
+  // Cron-based scheduling - 3 separate cron jobs
+  snapshotCron: string | null;        // Step 1: Take snapshot (uses previous as baseline)
+  calculateCron: string | null;       // Step 2: Calculate rewards (if 2+ snapshots exist)
+  airdropCron: string | null;         // Step 3: Auto-airdrop (100% wallet balance)
 }
 
 interface EnvConfig {
@@ -141,7 +135,8 @@ export function validateEnv(): EnvConfig {
   const tokenDecimals = getEnvVarAsInt('TOKEN_DECIMALS', 18);
 
   const network: NetworkConfig = {
-    rpcUrl: getEnvVar('RPC_URL', false) || preset.rpcUrl,
+    // Accept both BASE_RPC_URL (preferred) and RPC_URL (legacy)
+    rpcUrl: getEnvVar('BASE_RPC_URL', false) || getEnvVar('RPC_URL', false) || preset.rpcUrl,
     chainId: CONTRACTS.CHAIN_ID,
     chainName: CONTRACTS.CHAIN_NAME,
     tokenAddress,
@@ -151,24 +146,17 @@ export function validateEnv(): EnvConfig {
     moralisChain: CONTRACTS.MORALIS_CHAIN,
   };
 
-  // Schedule config (can override timing from .env)
-  // AUTO_START: Whether to start the workflow automatically on server start (default: false for fork)
-  // START_DELAY_MINUTES: Minutes to wait before starting the first cycle (default: 0)
-  // SNAPSHOT_CRON / CALCULATE_CRON: Optional cron expressions for scheduled runs
-  //   Example: "30 14 * * *" = 2:30 PM daily, "0 */2 * * *" = every 2 hours
+  // Schedule config - 3 separate cron jobs:
+  //   SNAPSHOT_CRON → CALCULATE_CRON → AIRDROP_CRON
   const snapshotCron = getEnvVar('SNAPSHOT_CRON', false) || null;
   const calculateCron = getEnvVar('CALCULATE_CRON', false) || null;
+  const airdropCron = getEnvVar('AIRDROP_CRON', false) || null;
 
   const schedule: ScheduleConfig = {
     useFastCycles: preset.useFastCycles,
-    autoStart: getEnvVarAsBool('AUTO_START', false),
-    startDelayMinutes: getEnvVarAsInt('START_DELAY_MINUTES', 0),
     snapshotCron,
     calculateCron,
-    snapshotIntervalMinutes: getEnvVarAsInt('SNAPSHOT_INTERVAL', preset.snapshotIntervalMinutes),
-    calculateDelayMinutes: getEnvVarAsInt('CALCULATE_DELAY', preset.calculateDelayMinutes),
-    airdropDelayMinutes: getEnvVarAsInt('AIRDROP_DELAY', preset.airdropDelayMinutes),
-    autoApprove: getEnvVarAsBool('AUTO_APPROVE', preset.autoApprove),
+    airdropCron,
   };
 
   return {

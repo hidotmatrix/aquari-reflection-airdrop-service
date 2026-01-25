@@ -8,6 +8,8 @@ import {
   isValidAddress,
   formatGasPrice,
   formatCompactNumber,
+  formatDate,
+  formatRelativeTime,
 } from '../../src/utils/format';
 
 // ═══════════════════════════════════════════════════════════
@@ -25,6 +27,32 @@ describe('Format Utilities', () => {
     it('should handle zero', () => {
       expect(formatTokenAmount('0', 18, 4)).toBe('0');
       expect(formatTokenAmount('', 18, 4)).toBe('0');
+    });
+
+    it('should use default decimals (18) when not specified', () => {
+      expect(formatTokenAmount('1000000000000000000')).toBe('1');
+    });
+
+    it('should use default displayDecimals (4) when not specified', () => {
+      expect(formatTokenAmount('1234567890000000000', 18)).toBe('1.2345');
+    });
+
+    it('should handle very small amounts', () => {
+      expect(formatTokenAmount('1', 18, 18)).toBe('0.000000000000000001');
+    });
+
+    it('should handle different token decimals (6 for USDC)', () => {
+      expect(formatTokenAmount('1000000', 6, 2)).toBe('1');
+      expect(formatTokenAmount('1500000', 6, 2)).toBe('1.5');
+    });
+
+    it('should handle different token decimals (8 for WBTC)', () => {
+      expect(formatTokenAmount('100000000', 8, 4)).toBe('1');
+    });
+
+    it('should trim trailing zeros in decimal part', () => {
+      expect(formatTokenAmount('1000000000000000000', 18, 4)).toBe('1');
+      expect(formatTokenAmount('1100000000000000000', 18, 4)).toBe('1.1');
     });
 
     it('should format with correct decimal places', () => {
@@ -126,6 +154,81 @@ describe('Format Utilities', () => {
       expect(formatCompactNumber(1500)).toBe('1.50K');
       expect(formatCompactNumber(1500000)).toBe('1.50M');
       expect(formatCompactNumber(1500000000)).toBe('1.50B');
+    });
+
+    it('should handle edge cases at thresholds', () => {
+      expect(formatCompactNumber(999)).toBe('999');
+      expect(formatCompactNumber(1000)).toBe('1.00K');
+      expect(formatCompactNumber(999999)).toBe('1000.00K');
+      expect(formatCompactNumber(1000000)).toBe('1.00M');
+      expect(formatCompactNumber(1000000000)).toBe('1.00B');
+    });
+  });
+
+  describe('formatDate', () => {
+    it('should format Date object', () => {
+      const date = new Date('2025-01-15T14:30:45.000Z');
+      const formatted = formatDate(date);
+      expect(formatted).toBe('2025-01-15 14:30:45 UTC');
+    });
+
+    it('should format date string', () => {
+      const formatted = formatDate('2025-06-20T08:15:30.000Z');
+      expect(formatted).toBe('2025-06-20 08:15:30 UTC');
+    });
+
+    it('should handle timezone correctly', () => {
+      const date = new Date('2025-12-31T23:59:59.999Z');
+      const formatted = formatDate(date);
+      expect(formatted).toBe('2025-12-31 23:59:59 UTC');
+    });
+  });
+
+  describe('formatRelativeTime', () => {
+    it('should return "just now" for times less than 60 seconds ago', () => {
+      const now = new Date();
+      const thirtySecsAgo = new Date(now.getTime() - 30 * 1000);
+      expect(formatRelativeTime(thirtySecsAgo)).toBe('just now');
+    });
+
+    it('should format minutes ago', () => {
+      const now = new Date();
+      const oneMinAgo = new Date(now.getTime() - 60 * 1000);
+      expect(formatRelativeTime(oneMinAgo)).toBe('1 minute ago');
+
+      const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+      expect(formatRelativeTime(fiveMinAgo)).toBe('5 minutes ago');
+    });
+
+    it('should format hours ago', () => {
+      const now = new Date();
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      expect(formatRelativeTime(oneHourAgo)).toBe('1 hour ago');
+
+      const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      expect(formatRelativeTime(threeHoursAgo)).toBe('3 hours ago');
+    });
+
+    it('should format days ago', () => {
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      expect(formatRelativeTime(oneDayAgo)).toBe('1 day ago');
+
+      const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+      expect(formatRelativeTime(threeDaysAgo)).toBe('3 days ago');
+    });
+
+    it('should return formatted date for times older than 7 days', () => {
+      const now = new Date();
+      const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+      const result = formatRelativeTime(twoWeeksAgo);
+      expect(result).toContain('UTC');
+    });
+
+    it('should handle date string input', () => {
+      const now = new Date();
+      const oneHourAgoStr = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+      expect(formatRelativeTime(oneHourAgoStr)).toBe('1 hour ago');
     });
   });
 });

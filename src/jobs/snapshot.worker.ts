@@ -7,6 +7,16 @@ import { Snapshot, Holder, fromMoralisResponse } from '../models';
 import { fetchHoldersPage, fetchMockHolders } from '../services/moralis.service';
 import { getWeekId } from '../utils/week';
 import { calculateRewards } from '../services/calculation.service';
+import {
+  initializeJobLogService,
+  createJobLog,
+  markJobRunning,
+  markJobCompleted,
+  markJobFailed,
+  updateJobProgress,
+  addJobLogEntry,
+  JobLog,
+} from '../services/job-log.service';
 
 /**
  * Get Redis connection options for worker
@@ -36,8 +46,19 @@ async function getDb(): Promise<Db> {
     await mongoClient.connect();
     db = mongoClient.db();
     logger.info('Worker connected to MongoDB');
+
+    // Initialize job log service with the database
+    initializeJobLogService(db);
   }
   return db;
+}
+
+/**
+ * Helper to determine job type from SnapshotJobData
+ */
+function getJobType(_data: SnapshotJobData): JobLog['type'] {
+  // In the new 3-step flow, all snapshots are just 'snapshot' type
+  return 'snapshot';
 }
 
 /**
@@ -49,20 +70,44 @@ async function processSnapshotJob(
   const { weekId, type } = job.data;
   const config = getConfig();
   const database = await getDb();
+  const jobId = job.id || `job-${Date.now()}`;
 
   logger.info(`════════════════════════════════════════════════════════════`);
-  logger.info(`Processing snapshot job: ${job.id}`);
+  logger.info(`Processing snapshot job: ${jobId}`);
   logger.info(`  Week ID: ${weekId}, Type: ${type}`);
   logger.info(`════════════════════════════════════════════════════════════`);
 
-  // For full flow, process both start and end snapshots, then calculate
-  if (type === 'full') {
-    return processFullFlow(job, database);
+  // Create job log entry in MongoDB
+  const jobType = getJobType(job.data);
+  try {
+    await createJobLog(jobId, jobType, weekId);
+    await markJobRunning(jobId);
+  } catch (err) {
+    // Job log might already exist if retrying
+    logger.debug('Job log entry might already exist:', err);
+    await markJobRunning(jobId);
   }
 
-  // Single snapshot processing
-  const snapshotWeekId = `${weekId}-${type}`;
-  return processSingleSnapshot(job, database, snapshotWeekId);
+  try {
+    let result: SnapshotJobResult;
+
+    // For full flow, process both start and end snapshots, then calculate
+    if (type === 'full') {
+      result = await processFullFlow(job, database, jobId);
+    } else {
+      // Single snapshot processing
+      const snapshotWeekId = `${weekId}-${type}`;
+      result = await processSingleSnapshot(job, database, snapshotWeekId, jobId);
+    }
+
+    // Mark job as completed in MongoDB
+    await markJobCompleted(jobId, { ...result });
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await markJobFailed(jobId, errorMessage);
+    throw error;
+  }
 }
 
 /**
@@ -71,7 +116,8 @@ async function processSnapshotJob(
 async function processSingleSnapshot(
   job: Job<SnapshotJobData, SnapshotJobResult>,
   database: Db,
-  snapshotWeekId: string
+  snapshotWeekId: string,
+  jobId: string
 ): Promise<SnapshotJobResult> {
   const config = getConfig();
   const startTime = Date.now();
@@ -162,10 +208,12 @@ async function processSingleSnapshot(
       fetched: totalInserted,
       inserted: totalInserted,
     });
+    await addJobLogEntry(jobId, 'info', `Starting snapshot for ${snapshotWeekId}`);
 
     if (useMockData) {
       // Mock mode
       logger.info('[MOCK] Using mock holder data');
+      await addJobLogEntry(jobId, 'info', '[MOCK] Using mock holder data');
       const tokenAddress = getTokenAddress();
       const { holders: mockHolders, apiCallCount: mockCalls } = await fetchMockHolders(
         tokenAddress,
@@ -193,6 +241,7 @@ async function processSingleSnapshot(
       // Real mode - fetch from Moralis with incremental saving
       const tokenAddress = getTokenAddress();
       logger.info(`Fetching holders from Moralis for ${tokenAddress}`);
+      await addJobLogEntry(jobId, 'info', `Fetching holders from Moralis for ${tokenAddress}`);
 
       let cursor = resumeCursor || '';
       let consecutiveErrors = 0;
@@ -251,6 +300,15 @@ async function processSingleSnapshot(
                 `📊 Progress: ${totalInserted.toLocaleString()} holders saved${progressPct} | API calls: ${apiCallCount}`
               );
 
+              // Update job log periodically (every ~500 holders)
+              if (totalInserted % 500 < BATCH_SIZE) {
+                await updateJobProgress(jobId, {
+                  percentage: cursor ? Math.min(90, Math.floor(totalInserted / 10)) : 95,
+                  current: totalInserted,
+                  stage: cursor ? 'fetching' : 'finalizing',
+                }, `Progress: ${totalInserted.toLocaleString()} holders saved`);
+              }
+
               pendingHolders = [];
             }
           }
@@ -289,6 +347,7 @@ async function processSingleSnapshot(
 
             const backoffMs = Math.min(2000 * Math.pow(2, consecutiveErrors), 30000);
             logger.warn(`⚠️  Rate limited, waiting ${backoffMs}ms (attempt ${consecutiveErrors}/${MAX_ERRORS})`);
+            await addJobLogEntry(jobId, 'warn', `Rate limited, waiting ${backoffMs}ms (attempt ${consecutiveErrors}/${MAX_ERRORS})`);
             await sleep(backoffMs);
             continue;
           }
@@ -325,6 +384,9 @@ async function processSingleSnapshot(
     logger.info(`   API calls: ${apiCallCount}`);
     logger.info(`════════════════════════════════════════════════════════════`);
 
+    // Log completion to job log
+    await addJobLogEntry(jobId, 'success', `Snapshot completed: ${totalInserted.toLocaleString()} holders in ${(durationMs / 1000).toFixed(1)}s`);
+
     return {
       success: true,
       snapshotId: snapshotId.toString(),
@@ -344,6 +406,7 @@ async function processSingleSnapshot(
     );
 
     logger.error(`❌ Snapshot failed: ${errorMessage}`);
+    await addJobLogEntry(jobId, 'error', `Snapshot failed: ${errorMessage}`);
     throw error;
   }
 }
@@ -353,15 +416,18 @@ async function processSingleSnapshot(
  */
 async function processFullFlow(
   job: Job<SnapshotJobData, SnapshotJobResult>,
-  database: Db
+  database: Db,
+  jobId: string
 ): Promise<SnapshotJobResult> {
   const { weekId } = job.data;
 
   logger.info(`Processing full flow for week ${weekId}`);
+  await addJobLogEntry(jobId, 'info', `Starting full flow for week ${weekId}`);
 
   // Step 1: Start snapshot
   await job.updateProgress({ step: 'start_snapshot', weekId });
-  const startResult = await processSingleSnapshot(job, database, `${weekId}-start`);
+  await addJobLogEntry(jobId, 'info', 'Step 1/3: Starting start snapshot');
+  const startResult = await processSingleSnapshot(job, database, `${weekId}-start`, jobId);
 
   if (!startResult.success) {
     return startResult;
@@ -369,7 +435,8 @@ async function processFullFlow(
 
   // Step 2: End snapshot
   await job.updateProgress({ step: 'end_snapshot', weekId });
-  const endResult = await processSingleSnapshot(job, database, `${weekId}-end`);
+  await addJobLogEntry(jobId, 'info', 'Step 2/3: Starting end snapshot');
+  const endResult = await processSingleSnapshot(job, database, `${weekId}-end`, jobId);
 
   if (!endResult.success) {
     return endResult;
@@ -377,6 +444,7 @@ async function processFullFlow(
 
   // Step 3: Calculate rewards
   await job.updateProgress({ step: 'calculate_rewards', weekId });
+  await addJobLogEntry(jobId, 'info', 'Step 3/3: Calculating rewards');
 
   const startSnapshot = await database.collection<Snapshot>('snapshots').findOne({
     weekId: `${weekId}-start`,
@@ -401,6 +469,8 @@ async function processFullFlow(
   logger.info(`   Eligible holders: ${calcResult.eligibleCount}`);
   logger.info(`   Batches created: ${calcResult.batchCount}`);
   logger.info(`════════════════════════════════════════════════════════════`);
+
+  await addJobLogEntry(jobId, 'success', `Full flow completed: ${calcResult.eligibleCount} eligible holders, ${calcResult.batchCount} batches`);
 
   return {
     success: true,

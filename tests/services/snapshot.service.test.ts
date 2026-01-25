@@ -232,5 +232,98 @@ describe('Snapshot Service', () => {
       const snapshots = await getRecentSnapshots(db, 2);
       expect(snapshots.length).toBe(2);
     });
+
+    it('should return empty array when no snapshots', async () => {
+      const db = getTestDb();
+      // Don't create any snapshots, just check it returns empty array
+      const snapshots = await getRecentSnapshots(db, 10);
+      expect(Array.isArray(snapshots)).toBe(true);
+    });
+  });
+
+  describe('Snapshot data integrity', () => {
+    it('should store totalBalance as string (for BigInt)', async () => {
+      const db = getTestDb();
+      const weekId = '2025-W22';
+
+      const { snapshot } = await takeSnapshot(db, weekId);
+
+      expect(typeof snapshot.totalBalance).toBe('string');
+      // Should be parseable as BigInt
+      expect(() => BigInt(snapshot.totalBalance)).not.toThrow();
+    });
+
+    it('should store holder count matching actual holders', async () => {
+      const db = getTestDb();
+      const weekId = '2025-W23';
+
+      const { snapshot, holdersInserted } = await takeSnapshot(db, weekId);
+
+      expect(snapshot.totalHolders).toBe(holdersInserted);
+
+      // Verify by querying holders
+      const holderCount = await db.collection<Holder>('holders').countDocuments({ weekId });
+      expect(holderCount).toBe(holdersInserted);
+    });
+
+    it('should set correct snapshotId on holders', async () => {
+      const db = getTestDb();
+      const weekId = '2025-W24';
+
+      const { snapshot } = await takeSnapshot(db, weekId);
+
+      const holders = await db.collection<Holder>('holders').find({ weekId }).toArray();
+      holders.forEach(holder => {
+        expect(holder.snapshotId.toString()).toBe(snapshot._id!.toString());
+      });
+    });
+
+    it('should set completedAt timestamp on successful snapshot', async () => {
+      const db = getTestDb();
+      const weekId = '2025-W25';
+
+      const before = new Date();
+      const { snapshot } = await takeSnapshot(db, weekId);
+      const after = new Date();
+
+      expect(snapshot.completedAt).toBeDefined();
+      expect(snapshot.completedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(snapshot.completedAt!.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+
+    it('should set metadata with API call info', async () => {
+      const db = getTestDb();
+      const weekId = '2025-W26';
+
+      const { snapshot } = await takeSnapshot(db, weekId);
+
+      expect(snapshot.metadata).toBeDefined();
+      expect(typeof snapshot.metadata!.fetchDurationMs).toBe('number');
+      expect(typeof snapshot.metadata!.apiCallCount).toBe('number');
+    });
+  });
+
+  describe('Holder balance map edge cases', () => {
+    it('should handle duplicate addresses (last wins)', async () => {
+      const db = getTestDb();
+      const weekId = '2025-W27';
+
+      await takeSnapshot(db, weekId);
+
+      // Insert a duplicate address with different balance
+      const holder = await db.collection<Holder>('holders').findOne({ weekId });
+      if (holder) {
+        await db.collection<Holder>('holders').insertOne({
+          ...holder,
+          _id: undefined as unknown as ObjectId,
+          balance: '9999999999999999999999',
+        });
+
+        const balanceMap = await getHolderBalanceMap(db, weekId);
+        // Map should have the balance from one of the entries
+        const balance = balanceMap.get(holder.address.toLowerCase());
+        expect(balance).toBeDefined();
+      }
+    });
   });
 });

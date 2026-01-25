@@ -65,11 +65,11 @@ A **fully autonomous** system that automatically rewards loyal AQUARI token hold
 │                                                                 │
 │  For each holder:                                               │
 │                                                                 │
-│    START Balance (Week Begin)     END Balance (Week End)        │
+│    PREVIOUS Balance (Last Snap)   CURRENT Balance (New Snap)    │
 │           ↓                              ↓                      │
 │           └──────────┬───────────────────┘                      │
 │                      ↓                                          │
-│              MIN(START, END)                                    │
+│            MIN(PREVIOUS, CURRENT)                               │
 │                      ↓                                          │
 │         Is MIN >= 1000 AQUARI?                                  │
 │                      │                                          │
@@ -92,12 +92,12 @@ A **fully autonomous** system that automatically rewards loyal AQUARI token hold
 
 ### Anti-Gaming Examples
 
-| Scenario | Start | End | MIN | Eligible? | Why |
-|----------|-------|-----|-----|-----------|-----|
+| Scenario | Previous | Current | MIN | Eligible? | Why |
+|----------|----------|---------|-----|-----------|-----|
 | Loyal Holder | 10,000 | 10,000 | 10,000 | ✅ Yes | Held full week |
 | Partial Seller | 10,000 | 5,000 | 5,000 | ✅ Yes | Credit = lower amount |
-| Accumulator | 5,000 | 15,000 | 5,000 | ✅ Yes | Credit = starting amount |
-| Last-Minute Buy | 0 | 50,000 | 0 | ❌ No | Wasn't holding at start |
+| Accumulator | 5,000 | 15,000 | 5,000 | ✅ Yes | Credit = previous amount |
+| Last-Minute Buy | 0 | 50,000 | 0 | ❌ No | Wasn't holding before |
 | Dumper | 10,000 | 500 | 500 | ❌ No | Below 1000 minimum |
 
 ---
@@ -129,7 +129,7 @@ A **fully autonomous** system that automatically rewards loyal AQUARI token hold
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Weekly Production Cycle
+### Weekly Production Cycle (3-Step Cron)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -137,71 +137,69 @@ A **fully autonomous** system that automatically rewards loyal AQUARI token hold
 │                    (Fully Autonomous)                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│   ══════════════════════════════════════════════════════════════   │
-│   WEEK 1 - BOOTSTRAP (First Time Only)                             │
-│   ══════════════════════════════════════════════════════════════   │
-│                                                                     │
-│   Sunday 23:59 UTC ──► CRON: Take Snapshot #1                      │
-│                        └─► Calls Moralis API                       │
-│                        └─► Saves all 12,000 holders                │
-│                        └─► Stored as reference                     │
-│                        └─► NO AIRDROP YET (nothing to compare)     │
-│                                                                     │
-│   ──────────────────────────────────────────────────────────────   │
+│   .env CONFIG:                                                     │
+│   MODE=production                                                  │
+│   SNAPSHOT_CRON=0 0 * * 0    (Sundays at midnight UTC)             │
+│   CALCULATE_CRON=5 0 * * 0   (Sundays at 00:05 UTC)                │
+│   AIRDROP_CRON=10 0 * * 0    (Sundays at 00:10 UTC)                │
 │                                                                     │
 │   ══════════════════════════════════════════════════════════════   │
-│   WEEK 2+ - REGULAR CYCLE (Repeats Forever)                        │
+│   WEEK 1 - BASELINE (First Run Only)                               │
 │   ══════════════════════════════════════════════════════════════   │
 │                                                                     │
-│   SUNDAY 23:59 UTC                                                 │
+│   Sunday 00:00 ──► SNAPSHOT: Take 2026-W04 snapshot                │
+│                    └─► Calls Moralis API                           │
+│                    └─► Saves all 12,000 holders                    │
+│                    └─► BASELINE (no previous to compare)           │
+│                                                                     │
+│   Sunday 00:05 ──► CALCULATE: Skipped (only 1 snapshot)            │
+│   Sunday 00:10 ──► AIRDROP: Skipped (no distribution)              │
+│                                                                     │
+│   ══════════════════════════════════════════════════════════════   │
+│   WEEK 2+ - FULL CYCLE (Repeats Every Week)                        │
+│   ══════════════════════════════════════════════════════════════   │
+│                                                                     │
+│   SUNDAY 00:00 UTC                                                 │
 │   ┌────────────────────────────────────────────────────────────┐   │
-│   │  CRON JOB 1: SNAPSHOT                                      │   │
+│   │  STEP 1: SNAPSHOT                                          │   │
 │   │  ─────────────────────                                     │   │
 │   │  • Call Moralis API                                        │   │
 │   │  • Fetch all ~12,000 AQUARI holders                        │   │
-│   │  • Save to MongoDB (holders collection)                    │   │
-│   │  • This snapshot serves DUAL PURPOSE:                      │   │
-│   │      → END of current week (for calculation)               │   │
-│   │      → START of next week (for next cycle)                 │   │
+│   │  • Save as 2026-W05 snapshot                               │   │
+│   │  • Used as CURRENT for this week                           │   │
+│   │  • Used as PREVIOUS for next week                          │   │
 │   └────────────────────────────────────────────────────────────┘   │
 │                          │                                         │
 │                          ▼                                         │
-│   MONDAY 00:30 UTC                                                 │
+│   SUNDAY 00:05 UTC                                                 │
 │   ┌────────────────────────────────────────────────────────────┐   │
-│   │  CRON JOB 2: CALCULATE                                     │   │
+│   │  STEP 2: CALCULATE                                         │   │
 │   │  ─────────────────────                                     │   │
-│   │  • Load previous snapshot (START)                          │   │
-│   │  • Load current snapshot (END)                             │   │
+│   │  • Load previous snapshot (2026-W04)                       │   │
+│   │  • Load current snapshot (2026-W05)                        │   │
 │   │  • Compare all holders                                     │   │
-│   │  • Apply MIN(start, end) rule                              │   │
-│   │  • Filter: balance >= 1000 AQUARI                          │   │
-│   │  • Generate eligible recipients list                       │   │
-│   │  • Create batches (500 recipients each)                    │   │
-│   │  • Status → "ready" (awaiting approval)                    │   │
+│   │  • Apply MIN(previous, current) rule                       │   │
+│   │  • Filter: MIN balance >= 1000 AQUARI                      │   │
+│   │  • Exclude: restricted addresses (bots)                    │   │
+│   │  • Calculate rewards based on wallet balance               │   │
+│   │  • Create batches (200 recipients each)                    │   │
+│   │  • Status → "ready"                                        │   │
 │   └────────────────────────────────────────────────────────────┘   │
 │                          │                                         │
 │                          ▼                                         │
-│   MONDAY 01:00 UTC                                                 │
+│   SUNDAY 00:10 UTC                                                 │
 │   ┌────────────────────────────────────────────────────────────┐   │
-│   │  CRON JOB 3: AIRDROP                                       │   │
+│   │  STEP 3: AIRDROP (Auto-Approve)                            │   │
 │   │  ─────────────────────                                     │   │
-│   │                                                            │   │
-│   │  IF auto-approve enabled:                                  │   │
-│   │    • Use default reward pool                               │   │
-│   │    • Execute all batches automatically                     │   │
-│   │                                                            │   │
-│   │  IF manual approval required:                              │   │
-│   │    • Wait for admin to:                                    │   │
-│   │      1. Set reward pool amount                             │   │
-│   │      2. Click "Approve & Execute"                          │   │
-│   │    • Then execute batches via Disperse contract            │   │
-│   │                                                            │   │
-│   │  EXECUTION:                                                │   │
-│   │  • Process batches sequentially (500 recipients each)      │   │
-│   │  • Call disperseTokenSimple() on Disperse contract         │   │
+│   │  • Read wallet balance as reward pool                      │   │
+│   │  • Auto-approve distribution                               │   │
+│   │  • Execute batches via Disperse contract                   │   │
+│   │  • Process 200 recipients per transaction                  │   │
 │   │  • Record txHash for each batch                            │   │
-│   │  • Update recipient status to "completed"                  │   │
+│   │  • Status → "completed"                                    │   │
 │   └────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│   Logs show: [2026-W05] AIRDROP - Completed! 2889 recipients       │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -229,13 +227,17 @@ Note: Each snapshot is used TWICE:
   → Saves 50% API calls!
 ```
 
-### Cron Schedule Summary
+### Cron Schedule Summary (3-Step System)
 
-| Job | Schedule | What It Does |
-|-----|----------|--------------|
-| Snapshot | Sunday 23:59 UTC | Fetch all holders from Moralis |
-| Calculate | Monday 00:30 UTC | Compare snapshots, create batches |
-| Airdrop | Monday 01:00 UTC | Execute batches (auto or manual) |
+| Step | Example Schedule | What It Does |
+|------|------------------|--------------|
+| 1. Snapshot | `0 0 * * 0` (Sun midnight) | Fetch all holders from Moralis |
+| 2. Calculate | `5 0 * * 0` (Sun 00:05) | Compare with previous snapshot, create batches |
+| 3. Airdrop | `10 0 * * 0` (Sun 00:10) | Auto-approve and execute batches |
+
+**Note:** Each snapshot serves as:
+- **Current** for this week's calculation
+- **Previous** for next week's calculation
 
 ---
 
@@ -247,57 +249,69 @@ Test mode runs the **exact same cron job logic** but with **minute-based timing*
 
 ### Test vs Production Comparison
 
-| Aspect | Test Mode | Production Mode |
-|--------|-----------|-----------------|
+| Aspect | Fork Mode (`MODE=fork`) | Production Mode (`MODE=production`) |
+|--------|-------------------------|-------------------------------------|
 | Network | Base Mainnet Fork (Anvil) | Base Mainnet |
 | Snapshot Source | Moralis API (real data!) | Moralis API |
-| Timing | Minutes (configurable) | Weekly cron |
+| Timing | Hourly cron (configurable) | Weekly cron |
 | Transactions | Fork (no real funds) | Real AQUARI tokens |
-| Week IDs | `TEST-001`, `TEST-002` | `2025-W04`, `2025-W05` |
-| Full Cycle | ~15 minutes | 1 week |
+| Week IDs | `TEST-001`, `TEST-002`, `TEST-003` | `2026-W04`, `2026-W05`, `2026-W06` |
+| Full Cycle | ~5-10 minutes | 1 week |
+| RPC Endpoint | `http://localhost:8545` (Anvil) | Alchemy/Infura/Public RPC |
 
-### Test Mode Timeline
+### Fork Mode Timeline (3-Step Cron)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    TEST MODE FLOW (~15 min cycle)                   │
+│                    FORK MODE FLOW (3-Step Cron)                     │
 │                    Cron Jobs Do Everything!                         │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│   CONFIG:                                                          │
-│   TEST_SNAPSHOT_INTERVAL=5   (minutes between snapshots)           │
-│   TEST_CALCULATE_DELAY=1     (minutes after END snapshot)          │
-│   TEST_AIRDROP_DELAY=1       (minutes after calculation)           │
-│   TEST_AUTO_APPROVE=true     (skip manual approval)                │
+│   .env CONFIG:                                                     │
+│   MODE=fork                                                        │
+│   SNAPSHOT_CRON=0 * * * *    (every hour at :00)                   │
+│   CALCULATE_CRON=2 * * * *   (every hour at :02)                   │
+│   AIRDROP_CRON=4 * * * *     (every hour at :04)                   │
 │                                                                     │
-│   ──────────────────────────────────────────────────────────────   │
+│   ══════════════════════════════════════════════════════════════   │
+│   CYCLE 1 (Baseline - No Airdrop)                                  │
+│   ══════════════════════════════════════════════════════════════   │
 │                                                                     │
-│   CYCLE 1:                                                         │
-│   ─────────                                                        │
-│   T+0:00  ──► Scheduler: Take START Snapshot (TEST-001-start)      │
-│               └─► Moralis API fetches real holder data             │
+│   :00  ──► SNAPSHOT: Take TEST-001 snapshot                        │
+│            └─► Moralis API fetches 12,000 holders                  │
+│            └─► This is BASELINE (no previous to compare)           │
 │                                                                     │
-│   T+5:00  ──► Scheduler: Take END Snapshot (TEST-001-end)          │
-│               └─► Moralis API fetches updated balances             │
+│   :02  ──► CALCULATE: Skipped (only 1 snapshot exists)             │
+│            └─► "Need at least 2 snapshots"                         │
 │                                                                     │
-│   T+6:00  ──► Scheduler: Calculate Rewards                         │
-│               └─► Compare START vs END                             │
-│               └─► Create eligible list + batches                   │
+│   :04  ──► AIRDROP: Skipped (no distribution ready)                │
 │                                                                     │
-│   T+7:00  ──► Scheduler: Execute Airdrop                           │
-│               └─► If AUTO_APPROVE: Execute immediately             │
-│               └─► If not: Wait for admin approval in UI            │
+│   ══════════════════════════════════════════════════════════════   │
+│   CYCLE 2+ (Full Cycle with Airdrop)                               │
+│   ══════════════════════════════════════════════════════════════   │
 │                                                                     │
-│   ──────────────────────────────────────────────────────────────   │
+│   :00  ──► SNAPSHOT: Take TEST-002 snapshot                        │
+│            └─► Moralis API fetches current balances                │
 │                                                                     │
-│   CYCLE 2 (starts automatically):                                  │
-│   ─────────                                                        │
-│   T+7:00  ──► TEST-001-end becomes TEST-002-start                  │
-│   T+12:00 ──► Take END Snapshot (TEST-002-end)                     │
-│   T+13:00 ──► Calculate                                            │
-│   T+14:00 ──► Airdrop                                              │
+│   :02  ──► CALCULATE: Compare TEST-001 vs TEST-002                 │
+│            └─► Apply MIN(previous, current) rule                   │
+│            └─► Create eligible list + batches                      │
+│            └─► Status → "ready"                                    │
 │                                                                     │
-│   ... continues forever until stopped ...                          │
+│   :04  ──► AIRDROP: Auto-approve and execute                       │
+│            └─► Use wallet balance as reward pool                   │
+│            └─► Execute batches via Disperse contract               │
+│            └─► Status → "completed"                                │
+│                                                                     │
+│   ══════════════════════════════════════════════════════════════   │
+│   CYCLE 3 (continues automatically)                                │
+│   ══════════════════════════════════════════════════════════════   │
+│                                                                     │
+│   :00  ──► SNAPSHOT: Take TEST-003                                 │
+│   :02  ──► CALCULATE: Compare TEST-002 vs TEST-003                 │
+│   :04  ──► AIRDROP: Execute                                        │
+│                                                                     │
+│   ... continues every hour until stopped ...                       │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -467,37 +481,28 @@ open http://localhost:3000/admin
 
 ```bash
 # ═══════════════════════════════════════════════════════════
-# AIRDROP MODE
+# MODE: fork | production
 # ═══════════════════════════════════════════════════════════
-AIRDROP_MODE=test                # test | production
+MODE=fork                        # fork = Anvil testing, production = real mainnet
+
+# ═══════════════════════════════════════════════════════════
+# 3-STEP CRON SCHEDULE
+# ═══════════════════════════════════════════════════════════
+# Fork Mode (fast testing - every hour)
+SNAPSHOT_CRON=0 * * * *          # Take snapshot at :00
+CALCULATE_CRON=2 * * * *         # Calculate at :02
+AIRDROP_CRON=4 * * * *           # Airdrop at :04
+
+# Production Mode (weekly - Sundays)
+# SNAPSHOT_CRON=0 0 * * 0        # Sunday midnight UTC
+# CALCULATE_CRON=5 0 * * 0       # Sunday 00:05 UTC
+# AIRDROP_CRON=10 0 * * 0        # Sunday 00:10 UTC
 
 # ═══════════════════════════════════════════════════════════
 # RPC CONFIGURATION
-# The ONLY thing you change between fork testing and production!
 # ═══════════════════════════════════════════════════════════
-RPC_URL=http://127.0.0.1:8545    # Fork: Anvil local
-# RPC_URL=https://mainnet.base.org  # Production: Base mainnet
-
-# ═══════════════════════════════════════════════════════════
-# CONTRACT ADDRESSES (Same for fork AND production!)
-# ═══════════════════════════════════════════════════════════
-AQUARI_TOKEN=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
-DISPERSE_CONTRACT=0xD152f549545093347A162Dce210e7293f1452150
-
-# ═══════════════════════════════════════════════════════════
-# TEST MODE TIMING (only when AIRDROP_MODE=test)
-# ═══════════════════════════════════════════════════════════
-TEST_SNAPSHOT_INTERVAL=5         # Minutes between snapshots
-TEST_CALCULATE_DELAY=1           # Minutes after snapshot
-TEST_AIRDROP_DELAY=1             # Minutes after calculation
-TEST_AUTO_APPROVE=true           # Auto-approve airdrops
-TEST_REWARD_POOL=1000000000000000000000  # 1000 AQUARI
-
-# ═══════════════════════════════════════════════════════════
-# MOCK FLAGS (for development without APIs)
-# ═══════════════════════════════════════════════════════════
-MOCK_SNAPSHOTS=false             # true = fake holder data
-MOCK_TRANSACTIONS=false          # true = simulate transactions
+BASE_RPC_URL=http://localhost:8545     # Fork: Anvil
+# BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY  # Production
 
 # ═══════════════════════════════════════════════════════════
 # DATABASE
@@ -505,30 +510,28 @@ MOCK_TRANSACTIONS=false          # true = simulate transactions
 MONGODB_URI=mongodb://localhost:27017/aquari-airdrop
 
 # ═══════════════════════════════════════════════════════════
-# ADMIN AUTH
+# ADMIN AUTH (generate with: npm run generate-credentials)
 # ═══════════════════════════════════════════════════════════
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=secure_password_here
-SESSION_SECRET=random_64_char_string
+ADMIN_PASSWORD=$2b$12$YOUR_BCRYPT_HASH_HERE
+SESSION_SECRET=your_64_char_random_string_here
 
 # ═══════════════════════════════════════════════════════════
-# MORALIS API (Always queries mainnet for real holder data)
+# MORALIS API (Always queries Base mainnet for real holder data)
 # ═══════════════════════════════════════════════════════════
 MORALIS_API_KEY=your_api_key
 
 # ═══════════════════════════════════════════════════════════
-# BLOCKCHAIN
+# BLOCKCHAIN (Production only)
 # ═══════════════════════════════════════════════════════════
-PRIVATE_KEY=                     # Airdropper wallet private key
-BATCH_SIZE=500                   # Recipients per transaction
-MAX_GAS_PRICE=50000000000        # 50 gwei max
-CONFIRMATIONS=3                  # Blocks to wait
+# PRIVATE_KEY=your_private_key   # Required for production
 
 # ═══════════════════════════════════════════════════════════
-# TOKEN CONFIG
+# OPTIONAL OVERRIDES
 # ═══════════════════════════════════════════════════════════
-MIN_BALANCE=1000000000000000000000   # 1000 AQUARI minimum
-REWARD_TOKEN=AQUARI
+# MIN_BALANCE=1000000000000000000000   # 1000 AQUARI minimum
+# BATCH_SIZE=200                       # Recipients per transaction
+# PORT=3000
 ```
 
 ### Mode Matrix
@@ -604,7 +607,7 @@ REWARD_TOKEN=AQUARI
 │  recipients         Eligible holders                            │
 │  ├── distributionId Reference                                  │
 │  ├── address        Wallet                                     │
-│  ├── balances       { start, end, min }                        │
+│  ├── balances       { previous, current, min }                 │
 │  ├── reward         Amount in wei                              │
 │  └── txHash         When completed                             │
 │                                                                 │
@@ -634,43 +637,60 @@ REWARD_TOKEN=AQUARI
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
 
-# 2. Start fork
-anvil --fork-url https://mainnet.base.org
+# 2. Start Anvil fork of Base mainnet
+anvil --fork-url https://mainnet.base.org --port 8545
 
-# 3. Configure .env
-AIRDROP_MODE=test
-RPC_URL=http://127.0.0.1:8545
-TEST_AUTO_APPROVE=true
-MOCK_SNAPSHOTS=false
-MOCK_TRANSACTIONS=false
+# 3. Start MongoDB
+docker compose up -d mongodb
 
-# 4. Start app
+# 4. Configure .env
+MODE=fork
+SNAPSHOT_CRON=0 * * * *
+CALCULATE_CRON=2 * * * *
+AIRDROP_CRON=4 * * * *
+
+# 5. Fund test wallet (see docs/fork_fund.md)
+# 6. Start app
 npm run dev
 
-# 5. Watch dashboard - cycles run automatically!
+# 7. Watch dashboard - cycles run automatically!
+# First cycle = baseline (no airdrop)
+# Second cycle = full airdrop
 ```
 
 ### Production Launch
 
 ```
 □ Fork testing completed successfully
-□ All cycles ran without errors
+□ At least 2 full cycles ran without errors
 □ Transactions confirmed on fork
+□ Dashboard shows correct cycle progress
 
-□ Change RPC_URL to https://mainnet.base.org
-□ Set AIRDROP_MODE=production
-□ Set TEST_AUTO_APPROVE=false (require manual approval)
-□ Add real PRIVATE_KEY (wallet with AQUARI + ETH)
-□ Verify wallet has enough AQUARI for reward pool
-□ Verify wallet has ETH for gas (~0.01 ETH plenty)
+□ Update .env:
+  MODE=production
+  PRIVATE_KEY=your_real_private_key
+  BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
+  MONGODB_URI=mongodb+srv://... (production DB)
 
-□ Take first snapshot (bootstrap)
-□ Wait for Week 2 snapshot
-□ Review calculation results
-□ Set reward pool amount
-□ Approve airdrop
-□ Monitor batch execution
-□ Verify recipients received tokens (Basescan)
+  # Weekly schedule (Sundays)
+  SNAPSHOT_CRON=0 0 * * 0
+  CALCULATE_CRON=5 0 * * 0
+  AIRDROP_CRON=10 0 * * 0
+
+□ Generate new admin credentials:
+  npm run generate-credentials -- --password "YourSecurePassword"
+
+□ Fund production wallet:
+  - ETH for gas (~0.01 ETH plenty)
+  - AQUARI tokens for rewards
+
+□ Sync restricted addresses:
+  npm run sync-restricted
+
+□ Deploy and start server
+□ Wait for first snapshot (baseline)
+□ Wait for second snapshot (first airdrop)
+□ Verify on Basescan
 ```
 
 ---
@@ -692,3 +712,21 @@ npm run dev
 ---
 
 *Last Updated: January 2025*
+
+---
+
+## Security Notes
+
+### Password Hashing
+
+Admin passwords are hashed using bcrypt (12 rounds). Generate secure credentials:
+
+```bash
+npm run generate-credentials
+```
+
+The system supports backward compatibility with plain-text passwords but will show a warning. Always use bcrypt hashes in production.
+
+### Restricted Addresses
+
+The `restricted_addresses` collection stores bot-restricted addresses from the AQUARI contract's antibot system. These addresses are excluded from airdrops. This collection is preserved when running `npm run clear-collections`.

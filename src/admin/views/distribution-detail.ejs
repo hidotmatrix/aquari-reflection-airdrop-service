@@ -19,16 +19,15 @@
     </span>
   </div>
 
-  <!-- Flow Steps -->
+  <!-- Flow Steps (3-step flow) -->
   <div class="mb-6">
     <h3 class="text-sm font-medium text-gray-400 mb-3">Distribution Flow</h3>
     <div class="flex items-center gap-2">
       <% const steps = [
-        { num: 1, label: 'Start Snapshot', done: currentStep > 1 },
-        { num: 2, label: 'End Snapshot', done: currentStep > 2 },
-        { num: 3, label: 'Calculate', done: currentStep > 3 },
-        { num: 4, label: 'Simulate/Execute', done: currentStep > 4 },
-        { num: 5, label: 'Completed', done: currentStep === 5 }
+        { num: 1, label: 'Snapshots', done: currentStep > 1 },
+        { num: 2, label: 'Calculate', done: currentStep > 2 },
+        { num: 3, label: 'Airdrop', done: currentStep > 3 },
+        { num: 4, label: 'Completed', done: currentStep === 4 }
       ]; %>
       <% steps.forEach((step, idx) => { %>
         <div class="flex items-center">
@@ -49,55 +48,55 @@
 
   <!-- Snapshot Stats Grid -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-    <!-- Start Snapshot -->
+    <!-- Previous Snapshot (Baseline) -->
     <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
       <div class="flex items-center gap-2 mb-3">
-        <div class="w-2 h-2 rounded-full <%= startSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
-        <h4 class="text-sm font-medium text-gray-300">Start Snapshot</h4>
+        <div class="w-2 h-2 rounded-full <%= previousSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">Previous Snapshot</h4>
       </div>
-      <% if (startSnapshot) { %>
+      <% if (previousSnapshot) { %>
         <div class="space-y-2">
           <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Week</span>
+            <span class="text-xs font-mono text-cyan-400"><%= previousSnapshot.weekId %></span>
+          </div>
+          <div class="flex justify-between">
             <span class="text-xs text-gray-500">Holders</span>
-            <span class="text-sm font-mono text-white"><%= startSnapshot.totalHolders?.toLocaleString() || 0 %></span>
+            <span class="text-sm font-mono text-white"><%= previousSnapshot.totalHolders?.toLocaleString() || 0 %></span>
           </div>
           <div class="flex justify-between">
             <span class="text-xs text-gray-500">Total Balance</span>
-            <span class="text-xs font-mono text-gray-400"><%= startSnapshot.totalBalance && /^\d+$/.test(startSnapshot.totalBalance) ? (BigInt(startSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-xs text-gray-500">Status</span>
-            <span class="text-xs <%= startSnapshot.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400' %>"><%= startSnapshot.status %></span>
+            <span class="text-xs font-mono text-gray-400"><%= previousSnapshot.totalBalance && /^\d+$/.test(previousSnapshot.totalBalance) ? (BigInt(previousSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
           </div>
         </div>
       <% } else { %>
-        <p class="text-gray-500 text-sm">Not taken yet</p>
+        <p class="text-gray-500 text-sm">Not found</p>
       <% } %>
     </div>
 
-    <!-- End Snapshot -->
+    <!-- Current Snapshot -->
     <div class="bg-dark-800/50 rounded-lg p-4 border border-dark-600">
       <div class="flex items-center gap-2 mb-3">
-        <div class="w-2 h-2 rounded-full <%= endSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
-        <h4 class="text-sm font-medium text-gray-300">End Snapshot</h4>
+        <div class="w-2 h-2 rounded-full <%= currentSnapshot?.status === 'completed' ? 'bg-emerald-400' : 'bg-yellow-400' %>"></div>
+        <h4 class="text-sm font-medium text-gray-300">Current Snapshot</h4>
       </div>
-      <% if (endSnapshot) { %>
+      <% if (currentSnapshot) { %>
         <div class="space-y-2">
           <div class="flex justify-between">
+            <span class="text-xs text-gray-500">Week</span>
+            <span class="text-xs font-mono text-cyan-400"><%= currentSnapshot.weekId %></span>
+          </div>
+          <div class="flex justify-between">
             <span class="text-xs text-gray-500">Holders</span>
-            <span class="text-sm font-mono text-white"><%= endSnapshot.totalHolders?.toLocaleString() || 0 %></span>
+            <span class="text-sm font-mono text-white"><%= currentSnapshot.totalHolders?.toLocaleString() || 0 %></span>
           </div>
           <div class="flex justify-between">
             <span class="text-xs text-gray-500">Total Balance</span>
-            <span class="text-xs font-mono text-gray-400"><%= endSnapshot.totalBalance && /^\d+$/.test(endSnapshot.totalBalance) ? (BigInt(endSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-xs text-gray-500">Status</span>
-            <span class="text-xs <%= endSnapshot.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400' %>"><%= endSnapshot.status %></span>
+            <span class="text-xs font-mono text-gray-400"><%= currentSnapshot.totalBalance && /^\d+$/.test(currentSnapshot.totalBalance) ? (BigInt(currentSnapshot.totalBalance) / BigInt(10**18)).toLocaleString() : '0' %> AQUARI</span>
           </div>
         </div>
       <% } else { %>
-        <p class="text-gray-500 text-sm">Not taken yet</p>
+        <p class="text-gray-500 text-sm">Not found</p>
       <% } %>
     </div>
 
@@ -262,8 +261,8 @@
       <thead>
         <tr class="bg-dark-800/50">
           <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Balance</th>
-          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prev Balance</th>
+          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curr Balance</th>
           <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">MIN Balance</th>
           <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
           <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
@@ -285,10 +284,10 @@
             </a>
           </td>
           <td class="px-5 py-3 text-sm text-gray-400 font-mono">
-            <%= r.balances?.start && /^\d+$/.test(r.balances.start) ? (BigInt(r.balances.start) / BigInt(10**18)).toLocaleString() : '—' %>
+            <%= r.balances?.previous && /^\d+$/.test(r.balances.previous) ? (BigInt(r.balances.previous) / BigInt(10**18)).toLocaleString() : '—' %>
           </td>
           <td class="px-5 py-3 text-sm text-gray-400 font-mono">
-            <%= r.balances?.end && /^\d+$/.test(r.balances.end) ? (BigInt(r.balances.end) / BigInt(10**18)).toLocaleString() : '—' %>
+            <%= r.balances?.current && /^\d+$/.test(r.balances.current) ? (BigInt(r.balances.current) / BigInt(10**18)).toLocaleString() : '—' %>
           </td>
           <td class="px-5 py-3 text-sm text-white font-mono font-medium">
             <%= r.balances?.min && /^\d+$/.test(r.balances.min) ? (BigInt(r.balances.min) / BigInt(10**18)).toLocaleString() : '—' %>

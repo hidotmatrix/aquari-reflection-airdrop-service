@@ -211,8 +211,8 @@ describe('Admin Controller', () => {
       // Insert distribution
       const distribution: Distribution = {
         weekId: '2025-W04',
-        startSnapshotId: new ObjectId(),
-        endSnapshotId: new ObjectId(),
+        previousSnapshotId: new ObjectId(),
+        currentSnapshotId: new ObjectId(),
         config: {
           minBalance: '1000000000000000000',
           rewardPool: '1000000000000000000000',
@@ -243,8 +243,8 @@ describe('Admin Controller', () => {
           weekId: '2025-W04',
           address: `0x${(i + 1).toString(16).padStart(40, '0')}`,
           balances: {
-            start: '1000000000000000000',
-            end: '1000000000000000000',
+            previous: '1000000000000000000',
+            current: '1000000000000000000',
             min: '1000000000000000000',
           },
           reward: (BigInt(12500000000000000000n - BigInt(i) * 100000000000000000n)).toString(),
@@ -340,8 +340,8 @@ describe('Admin Controller', () => {
           weekId: `2025-W0${week}`,
           address: searchAddress.toLowerCase(),
           balances: {
-            start: '1000000000000000000',
-            end: '1000000000000000000',
+            previous: '1000000000000000000',
+            current: '1000000000000000000',
             min: '1000000000000000000',
           },
           reward: '10000000000000000000',

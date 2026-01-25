@@ -17,12 +17,19 @@ import {
 } from '../../models';
 import { startJob } from '../../services/job.runner';
 import { getJobById, getActiveJobs as getActiveJobsFromDb, getRecentJobs } from '../../services/job.service';
-import { getSchedulerState, manualStartWorkflow } from '../../jobs/scheduler';
+import { getSchedulerState } from '../../jobs/scheduler';
+import {
+  getJobLogById,
+  getActiveJobLogs,
+  getRecentJobLogs,
+  JobLog,
+} from '../../services/job-log.service';
 import {
   getWalletEthBalance,
   getWalletTokenBalance,
   getWalletAddress,
 } from '../../services/blockchain.service';
+import { verifyPassword } from '../../utils/password';
 
 // ═══════════════════════════════════════════════════════════
 // LOGIN / LOGOUT
@@ -36,14 +43,20 @@ export function showLogin(req: Request, res: Response): void {
   res.render('login', { error: null, layout: false });
 }
 
-export function handleLogin(req: Request, res: Response): void {
+export async function handleLogin(req: Request, res: Response): Promise<void> {
   const { username, password } = req.body;
   const config = getConfig();
 
-  if (
-    username === config.ADMIN_USERNAME &&
-    password === config.ADMIN_PASSWORD
-  ) {
+  // Verify username matches
+  if (username !== config.ADMIN_USERNAME) {
+    res.render('login', { error: 'Invalid username or password', layout: false });
+    return;
+  }
+
+  // Verify password using bcrypt (supports legacy plain-text during migration)
+  const passwordValid = await verifyPassword(password, config.ADMIN_PASSWORD);
+
+  if (passwordValid) {
     req.session.isAuthenticated = true;
     req.session.username = username;
 
@@ -104,11 +117,9 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
       .toArray(),
   ]);
 
-  // Parse available weeks (remove -start/-end suffix and get unique base weeks)
+  // Parse available weeks (filter to valid week format patterns)
   const uniqueWeeks = [...new Set(
-    availableWeeks
-      .map((w: string) => w.replace(/-start$/, '').replace(/-end$/, ''))
-      .filter((w: string) => /^\d{4}-W\d{2}$/.test(w))
+    availableWeeks.filter((w: string) => /^\d{4}-W\d{2}$/.test(w))
   )].sort().reverse();
 
   // Format MIN_BALANCE for display (convert from wei to tokens)
@@ -306,12 +317,12 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
   }
 
   // Fetch snapshots for stats
-  const [startSnapshot, endSnapshot] = await Promise.all([
-    distribution.startSnapshotId
-      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.startSnapshotId })
+  const [previousSnapshot, currentSnapshot] = await Promise.all([
+    distribution.previousSnapshotId
+      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.previousSnapshotId })
       : null,
-    distribution.endSnapshotId
-      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.endSnapshotId })
+    distribution.currentSnapshotId
+      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.currentSnapshotId })
       : null,
   ]);
 
@@ -334,17 +345,16 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
     db.collection('batches').find({ distributionId: distribution._id }).sort({ batchNumber: 1 }).toArray(),
   ]);
 
-  // Calculate flow step
+  // Calculate flow step (3-step flow: 1=snapshot, 2=calculate, 3=airdrop)
   let currentStep = 1;
-  if (startSnapshot?.status === 'completed') currentStep = 2;
-  if (endSnapshot?.status === 'completed') currentStep = 3;
-  if (distribution.status === 'ready' || distribution.status === 'processing') currentStep = 4;
-  if (distribution.status === 'completed') currentStep = 5;
+  if (previousSnapshot?.status === 'completed' && currentSnapshot?.status === 'completed') currentStep = 2;
+  if (distribution.status === 'ready' || distribution.status === 'processing') currentStep = 3;
+  if (distribution.status === 'completed') currentStep = 4;
 
   res.render('distribution-detail', {
     distribution,
-    startSnapshot,
-    endSnapshot,
+    previousSnapshot,
+    currentSnapshot,
     batchStats,
     batches,
     recipients,
@@ -619,23 +629,16 @@ export async function deleteDatabase(req: Request, res: Response): Promise<void>
 
 export async function triggerSnapshot(req: Request, res: Response): Promise<void> {
   const db: Db = req.app.locals.db;
-  const { type } = req.body; // 'start' or 'end'
-
-  if (!type || !['start', 'end'].includes(type)) {
-    res.status(400).json({ success: false, error: 'Invalid type. Use "start" or "end"' });
-    return;
-  }
 
   try {
     const weekId = getCurrentWeekId();
-    const snapshotWeekId = `${weekId}-${type}`;
 
-    // Start the job
-    const job = await startJob(db, 'snapshot', snapshotWeekId);
+    // Start the snapshot job for current week
+    const job = await startJob(db, 'snapshot', weekId);
 
     res.json({
       success: true,
-      message: `Snapshot job started for ${snapshotWeekId}`,
+      message: `Snapshot job started for ${weekId}`,
       job: {
         id: job._id,
         type: job.type,
@@ -891,16 +894,16 @@ export async function getJobStatusEndpoint(req: Request, res: Response): Promise
   const { jobId, weekId } = req.query;
 
   try {
-    // Get specific job by ID
+    // Get specific job by ID - try jobs collection first (has real-time progress)
     let job: Job | null = null;
     if (jobId) {
       job = await getJobById(db, jobId as string);
     }
 
-    // Get active jobs
+    // Get active jobs from jobs collection
     const activeJobs = await getActiveJobsFromDb(db);
 
-    // Get recent jobs for history
+    // Get recent jobs from jobs collection
     const recentJobs = await getRecentJobs(db, 10);
 
     // Get snapshot status if weekId provided
@@ -917,7 +920,7 @@ export async function getJobStatusEndpoint(req: Request, res: Response): Promise
         weekId: job.weekId,
         status: job.status,
         progress: job.progress,
-        logs: job.logs.slice(-50), // Last 50 logs
+        logs: job.logs?.slice(-50) || [],
         result: job.result,
         error: job.error,
         startedAt: job.startedAt,
@@ -963,24 +966,43 @@ export async function getJobLogs(req: Request, res: Response): Promise<void> {
   }
 
   try {
+    // Try jobs collection first (has real-time progress)
     const job = await getJobById(db, jobId);
 
-    if (!job) {
-      res.status(404).json({ success: false, error: 'Job not found' });
+    if (job) {
+      res.json({
+        success: true,
+        job: {
+          id: job._id,
+          type: job.type,
+          weekId: job.weekId,
+          status: job.status,
+          progress: job.progress,
+        },
+        logs: job.logs || [],
+      });
       return;
     }
 
-    res.json({
-      success: true,
-      job: {
-        id: job._id,
-        type: job.type,
-        weekId: job.weekId,
-        status: job.status,
-        progress: job.progress,
-      },
-      logs: job.logs,
-    });
+    // Fall back to job_logs collection (persistent storage)
+    const jobLog = await getJobLogById(jobId);
+
+    if (jobLog) {
+      res.json({
+        success: true,
+        job: {
+          id: jobLog._id || jobLog.jobId,
+          type: jobLog.type,
+          weekId: jobLog.weekId,
+          status: jobLog.status,
+          progress: jobLog.progress,
+        },
+        logs: jobLog.logs,
+      });
+      return;
+    }
+
+    res.status(404).json({ success: false, error: 'Job not found' });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ success: false, error: message });
@@ -988,32 +1010,16 @@ export async function getJobLogs(req: Request, res: Response): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════
-// WORKFLOW CONTROL (Manual start for fork mode)
+// WORKFLOW CONTROL
 // ═══════════════════════════════════════════════════════════
 
-export async function startWorkflow(req: Request, res: Response): Promise<void> {
-  const db: Db = req.app.locals.db;
-
-  try {
-    const result = manualStartWorkflow(db);
-
-    if (result.success) {
-      res.json({
-        success: true,
-        message: result.message,
-        scheduler: getSchedulerState(),
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        error: result.message,
-        scheduler: getSchedulerState(),
-      });
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ success: false, error: message });
-  }
+export async function startWorkflow(_req: Request, res: Response): Promise<void> {
+  // System is now fully cron-based - no manual workflow start
+  res.status(400).json({
+    success: false,
+    error: 'System is cron-based. Configure cron times in .env to control scheduling.',
+    scheduler: getSchedulerState(),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1265,5 +1271,420 @@ function formatTokenBalance(wei: string): string {
     return (Number(balance) / 1e18).toLocaleString() + ' AQUARI';
   } catch {
     return '0 AQUARI';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// WEEK STATUS & STEP CONTROL
+// ═══════════════════════════════════════════════════════════
+
+interface StepStatus {
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  completedAt?: Date;
+  error?: string;
+  holders?: number;     // For snapshot step
+  eligible?: number;    // For calculate step
+  batches?: number;     // For airdrop step
+  reason?: string;      // For skipped status
+  progress?: string;    // For running status
+}
+
+interface WeekStatus {
+  totalSnapshots: number;
+  snapshot: StepStatus;
+  calculate: StepStatus;
+  airdrop: StepStatus;
+  previousSnapshot?: {
+    weekId: string;
+    holders: number;
+    completedAt: Date;
+  } | null;
+  currentSnapshot?: {
+    weekId: string;
+    holders: number;
+    completedAt: Date;
+  } | null;
+}
+
+/**
+ * List all weeks that have data in the database
+ */
+export async function listWeeks(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+
+  try {
+    // Get unique weekIds from distributions and snapshots
+    const [distWeeks, snapshotWeeks] = await Promise.all([
+      db.collection('distributions').distinct('weekId'),
+      db.collection('snapshots').distinct('weekId'),
+    ]);
+
+    // Combine and dedupe (snapshots now use plain weekId, no -start/-end suffix)
+    const allWeeks = [...new Set([...distWeeks, ...snapshotWeeks])];
+
+    // Sort descending (TEST-002 > TEST-001, 2026-W04 > 2026-W03)
+    allWeeks.sort((a, b) => b.localeCompare(a));
+
+    res.json({ success: true, weeks: allWeeks });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+/**
+ * Get the status of all 3 steps for a specific week
+ */
+export async function getWeekStatus(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const weekId = req.params.weekId;
+
+  if (!weekId) {
+    res.status(400).json({ success: false, error: 'weekId required' });
+    return;
+  }
+
+  try {
+    // Get total snapshot count (for baseline detection)
+    const totalSnapshots = await db.collection<Snapshot>('snapshots').countDocuments({ status: 'completed' });
+
+    // Check for snapshot (single snapshot per cycle now)
+    const snapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId });
+
+    // Get the oldest snapshot for baseline detection
+    const oldestSnapshots = await db.collection<Snapshot>('snapshots')
+      .find({ status: 'completed' })
+      .sort({ createdAt: 1 })
+      .limit(1)
+      .toArray();
+
+    const oldestSnapshot = oldestSnapshots[0] || null;
+
+    // Check for distribution (calculate step)
+    const distribution = await db.collection<Distribution>('distributions').findOne({ weekId });
+
+    // Get batch count if distribution exists
+    let batchCount = 0;
+    if (distribution) {
+      batchCount = await db.collection('batches').countDocuments({ distributionId: distribution._id });
+    }
+
+    // Check for running jobs
+    const runningJobs = await db.collection<Job>('jobs').find({
+      weekId,
+      status: 'running'
+    }).toArray();
+
+    // Check which specific jobs are running
+    const isSnapshotRunning = runningJobs.some(j => j.type === 'snapshot')
+      && (!snapshot || snapshot.status !== 'completed');
+    const isCalculateRunning = runningJobs.some(j => j.type === 'calculation')
+      && (!distribution || !['ready', 'processing', 'completed'].includes(distribution.status));
+    const isAirdropRunning = runningJobs.some(j => j.type === 'airdrop')
+      && (!distribution || distribution.status !== 'completed');
+
+    // Build snapshot step status with holder count
+    const snapshotStatus = getStepStatusFromSnapshot(snapshot, isSnapshotRunning);
+    if (snapshot && snapshot.totalHolders) {
+      snapshotStatus.holders = snapshot.totalHolders;
+    }
+
+    // Build calculate step status with eligible count
+    const calculateStatus = getCalculateStatus(distribution, isCalculateRunning);
+    if (distribution && distribution.stats?.eligibleHolders) {
+      calculateStatus.eligible = distribution.stats.eligibleHolders;
+    }
+
+    // Check if this week's snapshot IS the oldest one (making it the baseline)
+    // A baseline cycle has a snapshot but no distribution because there was nothing to compare to
+    const isBaselineCycle = oldestSnapshot && snapshot &&
+      oldestSnapshot.weekId === snapshot.weekId && !distribution;
+
+    // Mark as skipped if this was a baseline cycle
+    if (isBaselineCycle) {
+      calculateStatus.status = 'skipped';
+      calculateStatus.reason = 'Baseline snapshot (no previous to compare)';
+    }
+
+    // Build airdrop step status with batch count
+    const airdropStatus = getAirdropStatus(distribution, isAirdropRunning);
+    if (batchCount > 0) {
+      airdropStatus.batches = batchCount;
+    }
+    // Mark as skipped if this was a baseline cycle
+    if (isBaselineCycle) {
+      airdropStatus.status = 'skipped';
+      airdropStatus.reason = 'Baseline cycle (no airdrop)';
+    }
+
+    // Get the snapshots that were actually used for THIS week's distribution
+    let weekPreviousSnapshot = null;
+    let weekCurrentSnapshot = null;
+
+    if (distribution && distribution.previousSnapshotId && distribution.currentSnapshotId) {
+      // Get the actual snapshots used in this distribution's calculation
+      const [prevSnap, currSnap] = await Promise.all([
+        db.collection<Snapshot>('snapshots').findOne({ _id: distribution.previousSnapshotId }),
+        db.collection<Snapshot>('snapshots').findOne({ _id: distribution.currentSnapshotId }),
+      ]);
+
+      if (prevSnap) {
+        weekPreviousSnapshot = {
+          weekId: prevSnap.weekId,
+          holders: prevSnap.totalHolders || 0,
+          completedAt: prevSnap.completedAt || prevSnap.createdAt,
+        };
+      }
+      if (currSnap) {
+        weekCurrentSnapshot = {
+          weekId: currSnap.weekId,
+          holders: currSnap.totalHolders || 0,
+          completedAt: currSnap.completedAt || currSnap.createdAt,
+        };
+      }
+    }
+
+    // Build full status response
+    const status: WeekStatus = {
+      totalSnapshots,
+      snapshot: snapshotStatus,
+      calculate: calculateStatus,
+      airdrop: airdropStatus,
+      // Include previous/current snapshot info for THIS week's calculation
+      previousSnapshot: weekPreviousSnapshot,
+      currentSnapshot: weekCurrentSnapshot,
+    };
+
+    res.json({ success: true, weekId, status });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+function getStepStatusFromSnapshot(snapshot: Snapshot | null, isRunning: boolean): StepStatus {
+  if (isRunning) {
+    return { status: 'running' };
+  }
+  if (!snapshot) {
+    return { status: 'pending' };
+  }
+  if (snapshot.status === 'completed') {
+    return { status: 'completed', completedAt: snapshot.completedAt || snapshot.createdAt };
+  }
+  if (snapshot.status === 'failed') {
+    return { status: 'failed', error: 'Snapshot failed' };
+  }
+  return { status: 'pending' };
+}
+
+function getCalculateStatus(distribution: Distribution | null, isRunning: boolean): StepStatus {
+  if (isRunning) {
+    return { status: 'running' };
+  }
+  if (!distribution) {
+    return { status: 'pending' };
+  }
+  // Distribution exists means calculation was done
+  if (['ready', 'processing', 'completed'].includes(distribution.status)) {
+    return { status: 'completed', completedAt: distribution.createdAt };
+  }
+  if (distribution.status === 'failed') {
+    return { status: 'failed', error: 'Calculation failed' };
+  }
+  return { status: 'pending' };
+}
+
+function getAirdropStatus(distribution: Distribution | null, isRunning: boolean): StepStatus {
+  if (isRunning) {
+    return { status: 'running' };
+  }
+  if (!distribution) {
+    return { status: 'pending' };
+  }
+  if (distribution.status === 'completed') {
+    return { status: 'completed', completedAt: distribution.completedAt || distribution.updatedAt };
+  }
+  if (distribution.status === 'failed') {
+    return { status: 'failed', error: 'Airdrop failed' };
+  }
+  if (distribution.status === 'ready') {
+    return { status: 'pending' };
+  }
+  if (distribution.status === 'processing') {
+    return { status: 'running' };
+  }
+  return { status: 'pending' };
+}
+
+/**
+ * Manually trigger a specific step for a week
+ */
+export async function triggerWeekStep(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const weekId = req.params.weekId;
+  const step = req.params.step;
+
+  if (!weekId || !step) {
+    res.status(400).json({ success: false, error: 'weekId and step required' });
+    return;
+  }
+
+  try {
+    let job;
+
+    switch (step) {
+      case 'snapshot':
+        job = await startJob(db, 'snapshot', weekId);
+        break;
+      case 'calculate':
+        job = await startJob(db, 'calculation', weekId);
+        break;
+      case 'airdrop':
+        // For airdrop, we need to set up the distribution properly
+        const distribution = await db.collection<Distribution>('distributions').findOne({
+          weekId,
+          status: 'ready'
+        });
+
+        if (!distribution) {
+          res.status(400).json({
+            success: false,
+            error: 'No ready distribution found. Run calculation first.'
+          });
+          return;
+        }
+
+        // Read wallet balance and set as reward pool
+        const walletBalance = await getWalletTokenBalance();
+        if (BigInt(walletBalance) === 0n) {
+          res.status(400).json({
+            success: false,
+            error: 'Wallet balance is 0. Fund the wallet first.'
+          });
+          return;
+        }
+
+        // Update distribution with wallet balance
+        await db.collection<Distribution>('distributions').updateOne(
+          { _id: distribution._id },
+          {
+            $set: {
+              'config.rewardPool': walletBalance,
+              'config.autoApproved': false,
+              'config.manuallyTriggered': true,
+              'config.walletBalanceUsed': walletBalance,
+              status: 'processing',
+              updatedAt: new Date()
+            }
+          }
+        );
+
+        job = await startJob(db, 'airdrop', weekId);
+        break;
+      default:
+        res.status(400).json({ success: false, error: `Invalid step: ${step}. Use "snapshot", "calculate", or "airdrop"` });
+        return;
+    }
+
+    res.json({
+      success: true,
+      message: `Triggered ${step} for ${weekId}`,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+      }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+/**
+ * Retry a failed step for a week
+ */
+export async function retryWeekStep(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const weekId = req.params.weekId;
+  const step = req.params.step;
+
+  if (!weekId || !step) {
+    res.status(400).json({ success: false, error: 'weekId and step required' });
+    return;
+  }
+
+  try {
+    let job;
+
+    switch (step) {
+      case 'snapshot':
+        // Delete failed snapshot and retry
+        const existingSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId });
+        if (existingSnapshot) {
+          await db.collection('holders').deleteMany({ snapshotId: existingSnapshot._id });
+          await db.collection('snapshots').deleteOne({ _id: existingSnapshot._id });
+        }
+        job = await startJob(db, 'snapshot', weekId);
+        break;
+
+      case 'calculate':
+        // Delete distribution and related data, then recalculate
+        const existingDist = await db.collection<Distribution>('distributions').findOne({ weekId });
+        if (existingDist) {
+          await db.collection('recipients').deleteMany({ distributionId: existingDist._id });
+          await db.collection('batches').deleteMany({ distributionId: existingDist._id });
+          await db.collection('distributions').deleteOne({ _id: existingDist._id });
+        }
+        job = await startJob(db, 'calculation', weekId);
+        break;
+
+      case 'airdrop':
+        const distribution = await db.collection<Distribution>('distributions').findOne({ weekId });
+        if (!distribution) {
+          res.status(400).json({ success: false, error: 'No distribution found' });
+          return;
+        }
+
+        // Reset failed batches
+        await db.collection<Batch>('batches').updateMany(
+          { distributionId: distribution._id, status: 'failed' },
+          { $set: { status: 'pending', retryCount: 0, updatedAt: new Date() }, $unset: { lastError: '' } }
+        );
+
+        await db.collection<Recipient>('recipients').updateMany(
+          { distributionId: distribution._id, status: 'failed' },
+          { $set: { status: 'pending', retryCount: 0, updatedAt: new Date() }, $unset: { error: '' } }
+        );
+
+        // Update distribution status
+        await db.collection<Distribution>('distributions').updateOne(
+          { _id: distribution._id },
+          { $set: { status: 'processing', updatedAt: new Date() } }
+        );
+
+        job = await startJob(db, 'airdrop', weekId);
+        break;
+
+      default:
+        res.status(400).json({ success: false, error: `Invalid step: ${step}. Use "snapshot", "calculate", or "airdrop"` });
+        return;
+    }
+
+    res.json({
+      success: true,
+      message: `Retrying ${step} for ${weekId}`,
+      job: {
+        id: job._id,
+        type: job.type,
+        weekId: job.weekId,
+        status: job.status,
+      }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
   }
 }

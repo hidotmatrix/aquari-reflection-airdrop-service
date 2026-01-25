@@ -34,3 +34,9 @@ export {
   formatGasPrice,
   formatCompactNumber,
 } from './format';
+export {
+  hashPassword,
+  verifyPassword,
+  isBcryptHash,
+  generateSecureSecret,
+} from './password';

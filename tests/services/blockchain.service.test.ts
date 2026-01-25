@@ -262,6 +262,95 @@ describe('Blockchain Service', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
+// Pre-Flight Checks Tests
+// ═══════════════════════════════════════════════════════════
+
+import {
+  runPreFlightChecks,
+  waitForAirdropConditions,
+} from '../../src/services/blockchain.service';
+
+describe('Pre-Flight Checks', () => {
+  beforeEach(() => {
+    resetConfig();
+    process.env.MOCK_TRANSACTIONS = 'true';
+    resetConfig();
+  });
+
+  describe('runPreFlightChecks', () => {
+    it('should pass all checks in mock mode', async () => {
+      process.env.MOCK_TRANSACTIONS = 'true';
+      resetConfig();
+      initializeBlockchain();
+
+      const result = await runPreFlightChecks(100, BigInt('1000000000000000000000'));
+
+      expect(result.passed).toBe(true);
+      expect(result.checks.ethBalance.passed).toBe(true);
+      expect(result.checks.tokenBalance.passed).toBe(true);
+      expect(result.checks.gasPrice.passed).toBe(true);
+      expect(result.checks.allowance.passed).toBe(true);
+    });
+
+    it('should return check structure with all required fields', async () => {
+      process.env.MOCK_TRANSACTIONS = 'true';
+      resetConfig();
+      initializeBlockchain();
+
+      const result = await runPreFlightChecks(50, BigInt('500000000000000000000'));
+
+      expect(result).toHaveProperty('passed');
+      expect(result).toHaveProperty('checks');
+      expect(result.checks).toHaveProperty('ethBalance');
+      expect(result.checks).toHaveProperty('tokenBalance');
+      expect(result.checks).toHaveProperty('gasPrice');
+      expect(result.checks).toHaveProperty('allowance');
+
+      // Each check should have passed, message, and value
+      Object.values(result.checks).forEach(check => {
+        expect(check).toHaveProperty('passed');
+        expect(check).toHaveProperty('message');
+        expect(check).toHaveProperty('value');
+      });
+    });
+
+    it('should include mock mode messages', async () => {
+      process.env.MOCK_TRANSACTIONS = 'true';
+      resetConfig();
+      initializeBlockchain();
+
+      const result = await runPreFlightChecks(10, BigInt('10000000000000000000'));
+
+      expect(result.checks.ethBalance.message).toContain('Mock mode');
+      expect(result.checks.tokenBalance.message).toContain('Mock mode');
+    });
+  });
+
+  describe('waitForAirdropConditions', () => {
+    it('should return ready immediately in mock mode', async () => {
+      process.env.MOCK_TRANSACTIONS = 'true';
+      resetConfig();
+      initializeBlockchain();
+
+      const result = await waitForAirdropConditions(100, BigInt('1000000000000000000000'));
+
+      expect(result.ready).toBe(true);
+    });
+
+    it('should return result object with ready status', async () => {
+      process.env.MOCK_TRANSACTIONS = 'true';
+      resetConfig();
+      initializeBlockchain();
+
+      const result = await waitForAirdropConditions(50, BigInt('500000000000000000000'), 1000);
+
+      expect(result).toHaveProperty('ready');
+      expect(typeof result.ready).toBe('boolean');
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
 // Batch Recipient Validation Tests
 // ═══════════════════════════════════════════════════════════
 

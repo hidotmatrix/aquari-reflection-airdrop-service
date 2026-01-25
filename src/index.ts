@@ -4,12 +4,13 @@ import session from 'express-session';
 import expressLayouts from 'express-ejs-layouts';
 import path from 'path';
 import { ethers } from 'ethers';
-import { getConfig, getModeName, getTokenSymbol, getTokenDecimals } from './config/env';
+import { getConfig, getModeName, getTokenSymbol, getTokenDecimals, getRpcUrl } from './config/env';
 import { connectDatabase, createIndexes, closeDatabase, getDatabaseStatus, checkDatabaseHealth } from './config/database';
-import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired } from './config/redis';
+import { closeRedis, getRedisStatus, checkRedisHealth, isRedisRequired, getRedisConnection } from './config/redis';
 import { initializeJobs, stopAllJobs, startWorker, stopWorker } from './jobs';
 import { initializeBlockchain, getWalletEthBalance, getWalletTokenBalance, getWalletAddress } from './services/blockchain.service';
 import { getGasPrices } from './utils/gas-oracle';
+import { initializeJobLogService, createJobLogIndexes } from './services/job-log.service';
 import adminRoutes from './admin/routes/admin.routes';
 import { logger } from './utils/logger';
 
@@ -22,6 +23,89 @@ const MIN_ETH_BALANCE = 0.01; // 0.01 ETH for gas
 const MIN_TOKEN_BALANCE = 1000; // Minimum tokens to airdrop
 
 let isShuttingDown = false;
+
+/**
+ * Check connectivity to all required services before startup
+ */
+async function checkConnectivity(config: ReturnType<typeof getConfig>): Promise<void> {
+  logger.info('');
+  logger.info('CONNECTIVITY CHECKS:');
+
+  const results = {
+    mongodb: false,
+    redis: false,
+    rpc: false,
+  };
+
+  // Check MongoDB
+  try {
+    logger.info('  [1/3] Checking MongoDB...');
+    const db = await connectDatabase();
+    await db.command({ ping: 1 });
+    results.mongodb = true;
+    logger.info('        MongoDB: Connected');
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`        MongoDB: FAILED - ${msg}`);
+  }
+
+  // Check Redis
+  try {
+    logger.info('  [2/3] Checking Redis...');
+    getRedisConnection(); // Initialize connection
+    // Wait a moment for connection to establish
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const healthy = await checkRedisHealth();
+    if (healthy) {
+      results.redis = true;
+      logger.info('        Redis: Connected');
+    } else {
+      throw new Error('Health check failed');
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (isRedisRequired()) {
+      logger.error(`        Redis: FAILED - ${msg}`);
+    } else {
+      logger.warn(`        Redis: Not available (optional in dev mode) - ${msg}`);
+      results.redis = true; // Not required in dev
+    }
+  }
+
+  // Check RPC/Blockchain
+  try {
+    logger.info('  [3/3] Checking RPC...');
+    const rpcUrl = getRpcUrl();
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const network = await provider.getNetwork();
+    const blockNumber = await provider.getBlockNumber();
+    results.rpc = true;
+    logger.info(`        RPC: Connected (Chain ${network.chainId}, Block #${blockNumber})`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (config.MOCK_TRANSACTIONS) {
+      logger.warn(`        RPC: Not available (MOCK_TRANSACTIONS=true) - ${msg}`);
+      results.rpc = true; // Mock mode doesn't need RPC
+    } else {
+      logger.error(`        RPC: FAILED - ${msg}`);
+    }
+  }
+
+  logger.info('');
+
+  // Fail startup if critical services unavailable
+  if (!results.mongodb) {
+    throw new Error('MongoDB connection required - check MONGODB_URI');
+  }
+  if (!results.redis && isRedisRequired()) {
+    throw new Error('Redis connection required - check REDIS_URL');
+  }
+  if (!results.rpc && !config.MOCK_TRANSACTIONS) {
+    throw new Error('RPC connection required - check RPC_URL');
+  }
+
+  logger.info('All connectivity checks passed');
+}
 
 /**
  * Log wallet balances on startup with warnings if low
@@ -105,11 +189,18 @@ async function main(): Promise<void> {
     logger.info(`Min Balance: ${config.MIN_BALANCE} wei`);
     logger.info(`Port: ${config.PORT}`);
 
-    // Connect to MongoDB
+    // Run connectivity checks
+    await checkConnectivity(config);
+
+    // Get database connection (already connected from check)
     const db = await connectDatabase();
 
     // Create database indexes
     await createIndexes(db);
+
+    // Initialize job log service
+    initializeJobLogService(db);
+    await createJobLogIndexes();
 
     // Initialize blockchain service
     initializeBlockchain();
@@ -119,7 +210,7 @@ async function main(): Promise<void> {
 
     // Initialize cron jobs (this also initializes Redis)
     try {
-      initializeJobs(db);
+      await initializeJobs(db);
 
       // Start the background worker for job processing
       // In production, this would run as a separate process

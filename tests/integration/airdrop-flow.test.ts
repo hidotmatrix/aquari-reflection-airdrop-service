@@ -20,36 +20,36 @@ describe('Airdrop Flow Integration', () => {
     it('should complete full airdrop flow', async () => {
       const db = getTestDb();
 
-      // Step 1: Take week start snapshot (Sunday 23:59)
-      const startSnapshotResult = await takeSnapshot(db, `${weekId}-start`);
-      expect(startSnapshotResult.snapshot.status).toBe('completed');
-      expect(startSnapshotResult.holdersInserted).toBeGreaterThan(0);
+      // Step 1: Take previous snapshot (baseline from previous cycle)
+      const previousSnapshotResult = await takeSnapshot(db, '2025-W49');
+      expect(previousSnapshotResult.snapshot.status).toBe('completed');
+      expect(previousSnapshotResult.holdersInserted).toBeGreaterThan(0);
 
       // Verify holders were stored
-      const startHolders = await db
+      const previousHolders = await db
         .collection<Holder>('holders')
-        .find({ weekId: `${weekId}-start` })
+        .find({ weekId: '2025-W49' })
         .toArray();
-      expect(startHolders.length).toBe(startSnapshotResult.holdersInserted);
+      expect(previousHolders.length).toBe(previousSnapshotResult.holdersInserted);
 
-      // Step 2: Take week end snapshot (following Sunday 23:59)
-      const endSnapshotResult = await takeSnapshot(db, `${weekId}-end`);
-      expect(endSnapshotResult.snapshot.status).toBe('completed');
-      expect(endSnapshotResult.holdersInserted).toBeGreaterThan(0);
+      // Step 2: Take current snapshot (this cycle)
+      const currentSnapshotResult = await takeSnapshot(db, weekId);
+      expect(currentSnapshotResult.snapshot.status).toBe('completed');
+      expect(currentSnapshotResult.holdersInserted).toBeGreaterThan(0);
 
       // Verify holders were stored
-      const endHolders = await db
+      const currentHolders = await db
         .collection<Holder>('holders')
-        .find({ weekId: `${weekId}-end` })
+        .find({ weekId })
         .toArray();
-      expect(endHolders.length).toBe(endSnapshotResult.holdersInserted);
+      expect(currentHolders.length).toBe(currentSnapshotResult.holdersInserted);
 
-      // Step 3: Calculate rewards (Monday 00:30)
+      // Step 3: Calculate rewards
       const calculationResult = await calculateRewards(
         db,
         weekId,
-        startSnapshotResult.snapshot._id!,
-        endSnapshotResult.snapshot._id!
+        previousSnapshotResult.snapshot._id!,
+        currentSnapshotResult.snapshot._id!
       );
 
       expect(calculationResult.distribution).toBeDefined();
@@ -60,8 +60,8 @@ describe('Airdrop Flow Integration', () => {
         .collection<Distribution>('distributions')
         .findOne({ weekId });
       expect(distribution).not.toBeNull();
-      expect(distribution?.startSnapshotId).toEqual(startSnapshotResult.snapshot._id);
-      expect(distribution?.endSnapshotId).toEqual(endSnapshotResult.snapshot._id);
+      expect(distribution?.previousSnapshotId).toEqual(previousSnapshotResult.snapshot._id);
+      expect(distribution?.currentSnapshotId).toEqual(currentSnapshotResult.snapshot._id);
 
       // Verify recipients were created
       const recipients = await db
@@ -98,28 +98,28 @@ describe('Airdrop Flow Integration', () => {
       const db = getTestDb();
       const testWeekId = '2025-W51';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${testWeekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${testWeekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W50-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, testWeekId);
 
       const { distribution } = await calculateRewards(
         db,
         testWeekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
 
-      expect(distribution.startSnapshotId.toString()).toBe(startSnapshot._id!.toString());
-      expect(distribution.endSnapshotId.toString()).toBe(endSnapshot._id!.toString());
+      expect(distribution.previousSnapshotId.toString()).toBe(previousSnapshot._id!.toString());
+      expect(distribution.currentSnapshotId.toString()).toBe(currentSnapshot._id!.toString());
     });
 
     it('should store correct recipient balances', async () => {
       const db = getTestDb();
       const testWeekId = '2025-W52';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${testWeekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${testWeekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W51-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, testWeekId);
 
-      await calculateRewards(db, testWeekId, startSnapshot._id!, endSnapshot._id!);
+      await calculateRewards(db, testWeekId, previousSnapshot._id!, currentSnapshot._id!);
 
       const recipients = await db
         .collection<Recipient>('recipients')
@@ -128,17 +128,17 @@ describe('Airdrop Flow Integration', () => {
 
       recipients.forEach((recipient) => {
         expect(recipient.balances).toBeDefined();
-        expect(recipient.balances.start).toBeDefined();
-        expect(recipient.balances.end).toBeDefined();
+        expect(recipient.balances.previous).toBeDefined();
+        expect(recipient.balances.current).toBeDefined();
         expect(recipient.balances.min).toBeDefined();
 
-        // MIN balance should be <= start and <= end
+        // MIN balance should be <= previous and <= current
         const min = BigInt(recipient.balances.min);
-        const start = BigInt(recipient.balances.start);
-        const end = BigInt(recipient.balances.end);
+        const previous = BigInt(recipient.balances.previous);
+        const current = BigInt(recipient.balances.current);
 
-        expect(min).toBeLessThanOrEqual(start);
-        expect(min).toBeLessThanOrEqual(end);
+        expect(min).toBeLessThanOrEqual(previous);
+        expect(min).toBeLessThanOrEqual(current);
       });
     });
 
@@ -146,10 +146,10 @@ describe('Airdrop Flow Integration', () => {
       const db = getTestDb();
       const testWeekId = '2025-W53';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${testWeekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${testWeekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W52-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, testWeekId);
 
-      await calculateRewards(db, testWeekId, startSnapshot._id!, endSnapshot._id!);
+      await calculateRewards(db, testWeekId, previousSnapshot._id!, currentSnapshot._id!);
 
       const recipients = await db
         .collection<Recipient>('recipients')
@@ -172,14 +172,14 @@ describe('Airdrop Flow Integration', () => {
       const db = getTestDb();
       const testWeekId = '2025-W54';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${testWeekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${testWeekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W53-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, testWeekId);
 
       const { distribution } = await calculateRewards(
         db,
         testWeekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
 
       // Get all recipients
@@ -212,7 +212,7 @@ describe('Airdrop Flow Integration', () => {
 
       // Create empty snapshots (no holders)
       await db.collection<Snapshot>('snapshots').insertOne({
-        weekId: `${testWeekId}-start`,
+        weekId: '2025-W59',
         timestamp: new Date(),
         totalHolders: 0,
         totalBalance: '0',
@@ -223,7 +223,7 @@ describe('Airdrop Flow Integration', () => {
       });
 
       await db.collection<Snapshot>('snapshots').insertOne({
-        weekId: `${testWeekId}-end`,
+        weekId: testWeekId,
         timestamp: new Date(),
         totalHolders: 0,
         totalBalance: '0',
@@ -233,14 +233,14 @@ describe('Airdrop Flow Integration', () => {
         createdAt: new Date(),
       });
 
-      const startSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: `${testWeekId}-start` });
-      const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: `${testWeekId}-end` });
+      const previousSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: '2025-W59' });
+      const currentSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: testWeekId });
 
       const result = await calculateRewards(
         db,
         testWeekId,
-        startSnapshot!._id!,
-        endSnapshot!._id!
+        previousSnapshot!._id!,
+        currentSnapshot!._id!
       );
 
       expect(result.eligibleCount).toBe(0);
@@ -248,13 +248,13 @@ describe('Airdrop Flow Integration', () => {
       expect(result.distribution.status).toBe('ready');
     });
 
-    it('should handle holder with zero start balance', async () => {
+    it('should handle holder with zero previous balance', async () => {
       const db = getTestDb();
       const testWeekId = '2025-W61';
 
-      // Create start snapshot with no holders
+      // Create previous snapshot with no holders
       await db.collection<Snapshot>('snapshots').insertOne({
-        weekId: `${testWeekId}-start`,
+        weekId: '2025-W60-b',
         timestamp: new Date(),
         totalHolders: 0,
         totalBalance: '0',
@@ -264,19 +264,19 @@ describe('Airdrop Flow Integration', () => {
         createdAt: new Date(),
       });
 
-      // Create end snapshot and add a holder
-      const endSnapshotResult = await takeSnapshot(db, `${testWeekId}-end`);
+      // Create current snapshot and add a holder
+      const currentSnapshotResult = await takeSnapshot(db, testWeekId);
 
-      const startSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: `${testWeekId}-start` });
+      const previousSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: '2025-W60-b' });
 
       const result = await calculateRewards(
         db,
         testWeekId,
-        startSnapshot!._id!,
-        endSnapshotResult.snapshot._id!
+        previousSnapshot!._id!,
+        currentSnapshotResult.snapshot._id!
       );
 
-      // No one should be eligible (need balance at both start and end)
+      // No one should be eligible (need balance in both previous and current)
       expect(result.eligibleCount).toBe(0);
     });
   });
@@ -286,10 +286,10 @@ describe('Airdrop Flow Integration', () => {
       const db = getTestDb();
       const testWeekId = '2025-W70';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${testWeekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${testWeekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W69');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, testWeekId);
 
-      await calculateRewards(db, testWeekId, startSnapshot._id!, endSnapshot._id!);
+      await calculateRewards(db, testWeekId, previousSnapshot._id!, currentSnapshot._id!);
 
       const batches = await db
         .collection<Batch>('batches')
@@ -309,10 +309,10 @@ describe('Airdrop Flow Integration', () => {
       const db = getTestDb();
       const testWeekId = '2025-W71';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${testWeekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${testWeekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W70-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, testWeekId);
 
-      await calculateRewards(db, testWeekId, startSnapshot._id!, endSnapshot._id!);
+      await calculateRewards(db, testWeekId, previousSnapshot._id!, currentSnapshot._id!);
 
       const batches = await db
         .collection<Batch>('batches')

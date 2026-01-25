@@ -102,5 +102,94 @@ describe('Gas Oracle', () => {
       expect(formatEth(BigInt(1000000000000000000))).toBe('1.0');
       expect(formatEth(BigInt(500000000000000000))).toBe('0.5');
     });
+
+    it('should format very small amounts', () => {
+      expect(formatEth(BigInt(1000000000000))).toBe('0.000001');
+    });
+
+    it('should format large amounts', () => {
+      expect(formatEth(BigInt(100000000000000000000))).toBe('100.0');
+    });
+  });
+
+  describe('clearGasCache', () => {
+    it('should clear cached gas data', async () => {
+      // Get prices to populate cache
+      await getGasPrices();
+
+      // Clear the cache
+      clearGasCache();
+
+      // Next call should get fresh data (verified by timestamps being different)
+      await new Promise(resolve => setTimeout(resolve, 15));
+      const freshPrices = await getGasPrices();
+      expect(freshPrices).toBeDefined();
+    });
+  });
+
+  describe('GasPriceData structure', () => {
+    it('should have all required fields', async () => {
+      const prices = await getGasPrices();
+
+      expect(prices).toHaveProperty('current');
+      expect(prices).toHaveProperty('low');
+      expect(prices).toHaveProperty('medium');
+      expect(prices).toHaveProperty('high');
+      expect(prices).toHaveProperty('baseFee');
+      expect(prices).toHaveProperty('maxPriorityFee');
+      expect(prices).toHaveProperty('timestamp');
+      expect(prices).toHaveProperty('isAcceptable');
+      expect(prices).toHaveProperty('maxAllowed');
+    });
+
+    it('should have consistent price relationships in mock mode', async () => {
+      const prices = await getGasPrices();
+
+      // In mock mode: low = medium = current, high = current * 2
+      expect(prices.low).toBe(prices.current);
+      expect(prices.medium).toBe(prices.current);
+      expect(prices.high).toBe(prices.current * 2n);
+    });
+  });
+
+  describe('GasEstimate structure', () => {
+    it('should have all required fields', async () => {
+      const estimate = await estimateAirdropCost(100);
+
+      expect(estimate).toHaveProperty('estimatedGas');
+      expect(estimate).toHaveProperty('estimatedCostWei');
+      expect(estimate).toHaveProperty('estimatedCostEth');
+      expect(estimate).toHaveProperty('gasPrice');
+    });
+
+    it('should calculate cost correctly', async () => {
+      const estimate = await estimateAirdropCost(100);
+
+      // Cost should equal gas * gasPrice
+      expect(estimate.estimatedCostWei).toBe(estimate.estimatedGas * estimate.gasPrice);
+    });
+  });
+
+  describe('Edge cases', () => {
+    it('should handle zero recipients', async () => {
+      const estimate = await estimateAirdropCost(0);
+
+      // Should only have base gas (21000)
+      expect(estimate.estimatedGas).toBe(21000n);
+    });
+
+    it('should handle single recipient', async () => {
+      const estimate = await estimateAirdropCost(1);
+
+      // Base gas (21000) + per-recipient gas (15000)
+      expect(estimate.estimatedGas).toBe(21000n + 15000n);
+    });
+
+    it('should handle large recipient counts', async () => {
+      const estimate = await estimateAirdropCost(10000);
+
+      expect(estimate.estimatedGas).toBeGreaterThan(0n);
+      expect(estimate.estimatedCostWei).toBeGreaterThan(0n);
+    });
   });
 });

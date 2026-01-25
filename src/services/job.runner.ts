@@ -17,6 +17,15 @@ import {
   getWalletTokenBalance,
   initializeBlockchain,
 } from './blockchain.service';
+import {
+  createJobLog,
+  markJobRunning,
+  markJobCompleted,
+  markJobFailed,
+  addJobLogEntry,
+  updateJobProgress as updateJobLogProgress,
+  JobLog,
+} from './job-log.service';
 
 // ═══════════════════════════════════════════════════════════
 // Job Runner - Executes jobs with progress tracking
@@ -86,36 +95,65 @@ export async function startJob(
 }
 
 /**
+ * Map job type to job log type
+ */
+function getJobLogType(type: JobType, _weekId: string): JobLog['type'] {
+  if (type === 'snapshot') return 'snapshot';
+  if (type === 'calculation') return 'calculate';
+  if (type === 'airdrop') return 'airdrop';
+  return 'snapshot'; // default for full-flow
+}
+
+/**
  * Run job asynchronously
  */
 async function runJobAsync(db: Db, job: Job): Promise<void> {
   const ctx = createJobContext(db, job._id!);
+  const jobId = job._id!.toString();
+  const jobLogType = getJobLogType(job.type, job.weekId);
+
+  // Create job log entry in MongoDB for persistence
+  try {
+    await createJobLog(jobId, jobLogType, job.weekId);
+    await markJobRunning(jobId);
+  } catch (err) {
+    // Job log might already exist
+    logger.debug('Job log entry might already exist:', err);
+    try {
+      await markJobRunning(jobId);
+    } catch {
+      // Ignore if job log doesn't exist
+    }
+  }
 
   try {
     await updateJobStatus(db, job._id!, 'running');
     await ctx.log(`Starting ${job.type} job for ${job.weekId}`);
+    await addJobLogEntry(jobId, 'info', `Starting ${job.type} job for ${job.weekId}`);
 
     switch (job.type) {
       case 'snapshot':
-        await runSnapshotJob(ctx, job.weekId);
+        await runSnapshotJob(ctx, job.weekId, jobId);
         break;
       case 'calculation':
-        await runCalculationJob(ctx, job.weekId);
+        await runCalculationJob(ctx, job.weekId, jobId);
         break;
       case 'airdrop':
-        await runAirdropJob(ctx, job.weekId);
+        await runAirdropJob(ctx, job.weekId, jobId);
         break;
       case 'full-flow':
-        await runFullFlowJob(ctx, job.weekId);
+        await runFullFlowJob(ctx, job.weekId, jobId);
         break;
     }
 
     await updateJobStatus(db, job._id!, 'completed');
     await ctx.success(`Job completed successfully`);
+    await markJobCompleted(jobId, { type: job.type, weekId: job.weekId });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.error(`Job failed: ${message}`);
     await updateJobStatus(db, job._id!, 'failed', message);
+    await markJobFailed(jobId, message);
   }
 }
 
@@ -123,7 +161,7 @@ async function runJobAsync(db: Db, job: Job): Promise<void> {
 // Snapshot Job
 // ═══════════════════════════════════════════════════════════
 
-async function runSnapshotJob(ctx: JobContext, weekId: string): Promise<void> {
+async function runSnapshotJob(ctx: JobContext, weekId: string, jobId: string): Promise<void> {
   const config = getConfig();
   const db = ctx.db;
 
@@ -343,37 +381,38 @@ async function runSnapshotJob(ctx: JobContext, weekId: string): Promise<void> {
 // Calculation Job
 // ═══════════════════════════════════════════════════════════
 
-async function runCalculationJob(ctx: JobContext, weekId: string): Promise<void> {
+async function runCalculationJob(ctx: JobContext, weekId: string, jobId: string): Promise<void> {
   const db = ctx.db;
 
-  await ctx.log(`Calculating rewards for week ${weekId}`);
+  await ctx.log(`Calculating rewards for cycle ${weekId}`);
   await ctx.setProgress(0, 3, 'Loading snapshots...');
 
-  // Get start and end snapshots
-  const startWeekId = `${weekId}-start`;
-  const endWeekId = `${weekId}-end`;
+  // Get the 2 most recent completed snapshots
+  const snapshots = await db.collection<Snapshot>('snapshots')
+    .find({ status: 'completed' })
+    .sort({ createdAt: -1 })
+    .limit(2)
+    .toArray();
 
-  const startSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: startWeekId });
-  const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: endWeekId });
-
-  if (!startSnapshot) {
-    throw new Error(`Start snapshot not found: ${startWeekId}`);
-  }
-  if (startSnapshot.status !== 'completed') {
-    throw new Error(`Start snapshot not completed (status: ${startSnapshot.status})`);
+  if (snapshots.length < 2) {
+    throw new Error(`Need at least 2 snapshots to calculate. Found: ${snapshots.length}`);
   }
 
-  if (!endSnapshot) {
-    throw new Error(`End snapshot not found: ${endWeekId}`);
-  }
-  if (endSnapshot.status !== 'completed') {
-    throw new Error(`End snapshot not completed (status: ${endSnapshot.status})`);
+  // Current snapshot is most recent, previous is second most recent
+  const currentSnapshot = snapshots[0]!;
+  const previousSnapshot = snapshots[1]!;
+
+  // In production mode, verify current snapshot matches the week we're calculating for
+  // (In fork mode, weekId is TEST-XXX which won't match snapshot weekIds, so skip this check)
+  if (!weekId.startsWith('TEST-') && currentSnapshot.weekId !== weekId) {
+    throw new Error(`Current snapshot (${currentSnapshot.weekId}) doesn't match calculation week (${weekId}). Snapshot may have failed.`);
   }
 
-  await ctx.log(`Found snapshots - Start: ${startSnapshot.totalHolders} holders, End: ${endSnapshot.totalHolders} holders`);
+  await ctx.log(`Previous snapshot: ${previousSnapshot.weekId} (${previousSnapshot.totalHolders} holders)`);
+  await ctx.log(`Current snapshot: ${currentSnapshot.weekId} (${currentSnapshot.totalHolders} holders)`);
   await ctx.setProgress(1, 3, 'Calculating rewards...');
 
-  const result = await calculateRewards(db, weekId, startSnapshot._id!, endSnapshot._id!);
+  const result = await calculateRewards(db, weekId, previousSnapshot._id!, currentSnapshot._id!);
 
   await ctx.setProgress(3, 3, 'Completed');
   await ctx.success(`Rewards calculated: ${result.eligibleCount} eligible, ${result.batchCount} batches`);
@@ -437,7 +476,7 @@ interface Recipient {
   txHash?: string;
 }
 
-async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
+async function runAirdropJob(ctx: JobContext, weekId: string, jobId: string): Promise<void> {
   const db = ctx.db;
   const config = getConfig();
   const isSimulated = config.MOCK_TRANSACTIONS;
@@ -527,9 +566,11 @@ async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
         const batchTotal = BigInt(batch.totalAmount);
         totalSent += batchTotal;
 
+        const batchAmountFormatted = (batchTotal / BigInt(10 ** 18)).toString();
         await ctx.log(`[SIMULATED] Batch ${batch.batchNumber} completed`, {
           txHash: fakeTxHash.slice(0, 18) + '...',
           recipients: batch.recipientCount,
+          amount: `${batchAmountFormatted} AQUARI`,
         });
 
         successfulBatches++;
@@ -592,10 +633,12 @@ async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
 
         totalSent += batchTotal;
 
+        const batchAmountFormatted = (batchTotal / BigInt(10 ** 18)).toString();
         await ctx.log(`Batch ${batch.batchNumber} completed`, {
           txHash: execution.txHash,
           gasUsed: execution.gasUsed,
           recipients: batch.recipientCount,
+          amount: `${batchAmountFormatted} AQUARI`,
         });
 
         successfulBatches++;
@@ -667,7 +710,7 @@ async function runAirdropJob(ctx: JobContext, weekId: string): Promise<void> {
 // Full Flow Job
 // ═══════════════════════════════════════════════════════════
 
-async function runFullFlowJob(ctx: JobContext, weekId: string): Promise<void> {
+async function runFullFlowJob(ctx: JobContext, weekId: string, jobId: string): Promise<void> {
   const db = ctx.db;
   const config = getConfig();
 
@@ -689,7 +732,7 @@ async function runFullFlowJob(ctx: JobContext, weekId: string): Promise<void> {
     await ctx.log(`Found previous snapshot (${previousWeekId}) - using as start reference`);
     await ctx.log(`Step 1/2: Taking current week snapshot`);
     await ctx.setProgress(0, 2, 'Current snapshot...');
-    await runSnapshotJob(ctx, `${weekId}-end`);
+    await runSnapshotJob(ctx, `${weekId}-end`, jobId);
 
     // Copy reference for start
     const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({
@@ -742,7 +785,7 @@ async function runFullFlowJob(ctx: JobContext, weekId: string): Promise<void> {
 
     await ctx.log(`Step 2/2: Calculating rewards`);
     await ctx.setProgress(1, 2, 'Calculating...');
-    await runCalculationJob(ctx, weekId);
+    await runCalculationJob(ctx, weekId, jobId);
 
     await ctx.setProgress(2, 2, 'Completed');
     await ctx.success(`Full flow completed for week ${weekId} (1 API snapshot + previous week reference)`);
@@ -753,7 +796,7 @@ async function runFullFlowJob(ctx: JobContext, weekId: string): Promise<void> {
 
     await ctx.log(`Step 1/2: Taking snapshot`);
     await ctx.setProgress(0, 2, 'Taking snapshot...');
-    await runSnapshotJob(ctx, `${weekId}-end`);
+    await runSnapshotJob(ctx, `${weekId}-end`, jobId);
 
     // Duplicate as start snapshot
     await ctx.log(`Step 2/2: Duplicating snapshot for calculation testing`);
@@ -803,7 +846,7 @@ async function runFullFlowJob(ctx: JobContext, weekId: string): Promise<void> {
 
     // Calculate
     await ctx.log(`Calculating rewards`);
-    await runCalculationJob(ctx, weekId);
+    await runCalculationJob(ctx, weekId, jobId);
 
     await ctx.setProgress(2, 2, 'Completed');
     await ctx.success(`Full flow completed for week ${weekId} (dev mode - single snapshot duplicated)`);

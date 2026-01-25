@@ -36,11 +36,13 @@ router.post('/trigger/snapshot', ctrl.triggerSnapshot);
 router.post('/trigger/calculate', ctrl.triggerCalculation);
 router.post('/trigger/full-flow', ctrl.triggerFullFlow);
 router.post('/trigger/airdrop', ctrl.triggerAirdrop);
-router.post('/approve-airdrop', ctrl.approveAndExecuteAirdrop);
 router.post('/retry-airdrop', ctrl.retryFailedAirdrop);
 
-// Workflow control (manual start for fork mode)
-router.post('/workflow/start', ctrl.startWorkflow);
+// Week status and step control
+router.get('/weeks/list', ctrl.listWeeks);
+router.get('/week/:weekId/status', ctrl.getWeekStatus);
+router.post('/week/:weekId/trigger/:step', ctrl.triggerWeekStep);
+router.post('/week/:weekId/retry/:step', ctrl.retryWeekStep);
 
 // Job status and logs
 router.get('/jobs/status', ctrl.getJobStatusEndpoint);

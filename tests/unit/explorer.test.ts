@@ -2,11 +2,13 @@ import {
   getTxLink,
   getAddressLink,
   getTokenLink,
+  getTokenHolderLink,
   getBlockLink,
   isMockTxHash,
   formatTxHash,
   formatAddress,
   getExplorerBaseUrl,
+  explorerHelpers,
 } from '../../src/utils/explorer';
 
 // Mock the config
@@ -124,6 +126,51 @@ describe('Explorer Utils', () => {
 
     it('should return "—" for empty address', () => {
       expect(formatAddress('')).toBe('—');
+    });
+  });
+
+  describe('getTokenHolderLink', () => {
+    it('should generate valid token holder link', () => {
+      const tokenAddress = '0x7F0E9971D3320521Fc88F863E173a4cddBB051bA';
+      const holderAddress = '0x1234567890abcdef1234567890abcdef12345678';
+      const link = getTokenHolderLink(tokenAddress, holderAddress);
+
+      expect(link).toBe(`https://basescan.org/token/${tokenAddress}?a=${holderAddress}`);
+    });
+
+    it('should return # for empty token address', () => {
+      expect(getTokenHolderLink('', '0x1234567890abcdef1234567890abcdef12345678')).toBe('#');
+    });
+
+    it('should return # for empty holder address', () => {
+      expect(getTokenHolderLink('0x7F0E9971D3320521Fc88F863E173a4cddBB051bA', '')).toBe('#');
+    });
+
+    it('should return # for both empty', () => {
+      expect(getTokenHolderLink('', '')).toBe('#');
+    });
+  });
+
+  describe('explorerHelpers', () => {
+    it('should export all helper functions', () => {
+      expect(explorerHelpers.getTxLink).toBe(getTxLink);
+      expect(explorerHelpers.getAddressLink).toBe(getAddressLink);
+      expect(explorerHelpers.getTokenLink).toBe(getTokenLink);
+      expect(explorerHelpers.getTokenHolderLink).toBe(getTokenHolderLink);
+      expect(explorerHelpers.getBlockLink).toBe(getBlockLink);
+      expect(explorerHelpers.isMockTxHash).toBe(isMockTxHash);
+      expect(explorerHelpers.formatTxHash).toBe(formatTxHash);
+      expect(explorerHelpers.formatAddress).toBe(formatAddress);
+    });
+
+    it('should have baseUrl property', () => {
+      expect(explorerHelpers.baseUrl).toBe('https://basescan.org');
+    });
+  });
+
+  describe('getTokenLink edge cases', () => {
+    it('should return # for empty token address', () => {
+      expect(getTokenLink('')).toBe('#');
     });
   });
 });

@@ -261,10 +261,18 @@ function initializeThreeCronScheduler(db: Db): void {
     logger.info('');
     logger.info(`[${cycleId}] AIRDROP - Checking for ready distribution...`);
 
-    // Check if there's a ready distribution
-    const readyDist = await db.collection<Distribution>('distributions').findOne({
+    // Check if there's a ready distribution (prefer current cycle, fallback to any ready)
+    let readyDist = await db.collection<Distribution>('distributions').findOne({
+      weekId: cycleId,
       status: 'ready'
     });
+
+    // Fallback: find any ready distribution (handles edge cases)
+    if (!readyDist) {
+      readyDist = await db.collection<Distribution>('distributions').findOne({
+        status: 'ready'
+      });
+    }
 
     if (!readyDist) {
       logger.warn(`[${cycleId}] No ready distribution found - skipping airdrop`);

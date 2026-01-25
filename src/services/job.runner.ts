@@ -402,6 +402,12 @@ async function runCalculationJob(ctx: JobContext, weekId: string, jobId: string)
   const currentSnapshot = snapshots[0]!;
   const previousSnapshot = snapshots[1]!;
 
+  // In production mode, verify current snapshot matches the week we're calculating for
+  // (In fork mode, weekId is TEST-XXX which won't match snapshot weekIds, so skip this check)
+  if (!weekId.startsWith('TEST-') && currentSnapshot.weekId !== weekId) {
+    throw new Error(`Current snapshot (${currentSnapshot.weekId}) doesn't match calculation week (${weekId}). Snapshot may have failed.`);
+  }
+
   await ctx.log(`Previous snapshot: ${previousSnapshot.weekId} (${previousSnapshot.totalHolders} holders)`);
   await ctx.log(`Current snapshot: ${currentSnapshot.weekId} (${currentSnapshot.totalHolders} holders)`);
   await ctx.setProgress(1, 3, 'Calculating rewards...');

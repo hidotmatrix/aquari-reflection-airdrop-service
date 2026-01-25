@@ -85,19 +85,15 @@ nano .env.production
 
 ```env
 # Mode
-NODE_ENV=production
 MODE=production
 PORT=3000
 
 # Cloud MongoDB Atlas
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/aquari-airdrop
 
-# Cloud Upstash Redis
-REDIS_URL=redis://default:password@xxx.upstash.io:6379
-
-# Blockchain
-RPC_URL=https://mainnet.base.org
-PRIVATE_KEY=your_private_key_without_0x
+# Blockchain (use Alchemy or Infura for reliability)
+BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
+PRIVATE_KEY=your_private_key_here
 
 # Moralis
 MORALIS_API_KEY=your_moralis_key
@@ -107,16 +103,14 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=$2b$12$YOUR_BCRYPT_HASH_HERE
 SESSION_SECRET=your_64_char_random_string_here
 
-# Token
-TOKEN_ADDRESS=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
-TOKEN_SYMBOL=AQUARI
-TOKEN_DECIMALS=18
-MIN_BALANCE=1000000000000000000000
+# 3-Step Cron Schedule (Sundays at midnight UTC)
+SNAPSHOT_CRON=0 0 * * 0
+CALCULATE_CRON=5 0 * * 0
+AIRDROP_CRON=10 0 * * 0
 
-# Batch
-BATCH_SIZE=500
-MAX_GAS_PRICE=50000000000
-CONFIRMATIONS=3
+# Optional Overrides
+# MIN_BALANCE=1000000000000000000000  # 1000 AQUARI
+# BATCH_SIZE=200
 ```
 
 **Step 4: Build & Deploy**
@@ -169,19 +163,15 @@ nano .env.production
 
 ```env
 # Mode
-NODE_ENV=production
 MODE=production
 PORT=3000
 
 # Local MongoDB (Docker service)
 MONGODB_URI=mongodb://mongodb:27017/aquari-airdrop
 
-# Local Redis (Docker service)
-REDIS_URL=redis://redis:6379
-
-# Blockchain
-RPC_URL=https://mainnet.base.org
-PRIVATE_KEY=your_private_key_without_0x
+# Blockchain (use Alchemy or Infura for reliability)
+BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
+PRIVATE_KEY=your_private_key_here
 
 # Moralis
 MORALIS_API_KEY=your_moralis_key
@@ -191,16 +181,14 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=$2b$12$YOUR_BCRYPT_HASH_HERE
 SESSION_SECRET=your_64_char_random_string_here
 
-# Token
-TOKEN_ADDRESS=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
-TOKEN_SYMBOL=AQUARI
-TOKEN_DECIMALS=18
-MIN_BALANCE=1000000000000000000000
+# 3-Step Cron Schedule (Sundays at midnight UTC)
+SNAPSHOT_CRON=0 0 * * 0
+CALCULATE_CRON=5 0 * * 0
+AIRDROP_CRON=10 0 * * 0
 
-# Batch
-BATCH_SIZE=500
-MAX_GAS_PRICE=50000000000
-CONFIRMATIONS=3
+# Optional Overrides
+# MIN_BALANCE=1000000000000000000000  # 1000 AQUARI
+# BATCH_SIZE=200
 ```
 
 **Step 3: Build & Deploy**
@@ -384,13 +372,15 @@ chmod 600 .env.production
 |----------|-------------|---------|
 | `MODE` | production or fork | `production` |
 | `MONGODB_URI` | MongoDB connection | `mongodb+srv://...` |
-| `REDIS_URL` | Redis connection | `redis://...` |
-| `RPC_URL` | Base RPC endpoint | `https://mainnet.base.org` |
-| `PRIVATE_KEY` | Wallet private key | `abc123...` (no 0x) |
+| `BASE_RPC_URL` | Base RPC endpoint | `https://base-mainnet.g.alchemy.com/v2/...` |
+| `PRIVATE_KEY` | Wallet private key | `abc123...` |
 | `MORALIS_API_KEY` | Moralis API key | `eyJ...` |
 | `ADMIN_USERNAME` | Dashboard username | `admin` |
 | `ADMIN_PASSWORD` | bcrypt hash (use `npm run generate-credentials`) | `$2b$12$...` |
 | `SESSION_SECRET` | 64-char random | `a1b2c3...` |
+| `SNAPSHOT_CRON` | When to take snapshot | `0 0 * * 0` (Sunday midnight) |
+| `CALCULATE_CRON` | When to calculate | `5 0 * * 0` (Sunday 00:05) |
+| `AIRDROP_CRON` | When to airdrop | `10 0 * * 0` (Sunday 00:10) |
 
 ---
 
@@ -528,17 +518,23 @@ sudo nginx -t
 Before going live:
 
 - [ ] `MODE=production` in .env.production
-- [ ] `PRIVATE_KEY` is set and wallet is funded
+- [ ] `PRIVATE_KEY` is set and wallet is funded (ETH + AQUARI)
 - [ ] `ADMIN_PASSWORD` is bcrypt hash (run `npm run generate-credentials`)
 - [ ] Random `SESSION_SECRET` (64 chars, from credential generator)
-- [ ] `CONFIRMATIONS=3` for production
+- [ ] `BASE_RPC_URL` points to reliable RPC (Alchemy/Infura recommended)
+- [ ] Cron schedule configured for weekly (e.g., Sundays):
+  - `SNAPSHOT_CRON=0 0 * * 0`
+  - `CALCULATE_CRON=5 0 * * 0`
+  - `AIRDROP_CRON=10 0 * * 0`
 - [ ] MongoDB connected and accessible
-- [ ] Redis connected
+- [ ] Restricted addresses synced: `npm run sync-restricted`
 - [ ] Health endpoint returns OK: `curl localhost:3000/health`
 - [ ] Dashboard accessible at `/admin`
 - [ ] SSL/HTTPS configured
 - [ ] Firewall configured (only 80/443/22 open)
 - [ ] Container set to restart: `restart: unless-stopped`
+- [ ] First snapshot taken (baseline week)
+- [ ] Verified logs show correct week IDs (e.g., `2026-W04`)
 
 ---
 

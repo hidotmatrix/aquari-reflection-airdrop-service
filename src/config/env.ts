@@ -135,7 +135,8 @@ export function validateEnv(): EnvConfig {
   const tokenDecimals = getEnvVarAsInt('TOKEN_DECIMALS', 18);
 
   const network: NetworkConfig = {
-    rpcUrl: getEnvVar('RPC_URL', false) || preset.rpcUrl,
+    // Accept both BASE_RPC_URL (preferred) and RPC_URL (legacy)
+    rpcUrl: getEnvVar('BASE_RPC_URL', false) || getEnvVar('RPC_URL', false) || preset.rpcUrl,
     chainId: CONTRACTS.CHAIN_ID,
     chainName: CONTRACTS.CHAIN_NAME,
     tokenAddress,

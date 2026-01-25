@@ -1279,15 +1279,31 @@ function formatTokenBalance(wei: string): string {
 // ═══════════════════════════════════════════════════════════
 
 interface StepStatus {
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   completedAt?: Date;
   error?: string;
+  holders?: number;     // For snapshot step
+  eligible?: number;    // For calculate step
+  batches?: number;     // For airdrop step
+  reason?: string;      // For skipped status
+  progress?: string;    // For running status
 }
 
 interface WeekStatus {
-  snapshot: StepStatus;    // Single snapshot per cycle
+  totalSnapshots: number;
+  snapshot: StepStatus;
   calculate: StepStatus;
   airdrop: StepStatus;
+  previousSnapshot?: {
+    weekId: string;
+    holders: number;
+    completedAt: Date;
+  } | null;
+  currentSnapshot?: {
+    weekId: string;
+    holders: number;
+    completedAt: Date;
+  } | null;
 }
 
 /**
@@ -1329,11 +1345,29 @@ export async function getWeekStatus(req: Request, res: Response): Promise<void> 
   }
 
   try {
+    // Get total snapshot count (for baseline detection)
+    const totalSnapshots = await db.collection<Snapshot>('snapshots').countDocuments({ status: 'completed' });
+
     // Check for snapshot (single snapshot per cycle now)
     const snapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId });
 
+    // Get the oldest snapshot for baseline detection
+    const oldestSnapshots = await db.collection<Snapshot>('snapshots')
+      .find({ status: 'completed' })
+      .sort({ createdAt: 1 })
+      .limit(1)
+      .toArray();
+
+    const oldestSnapshot = oldestSnapshots[0] || null;
+
     // Check for distribution (calculate step)
     const distribution = await db.collection<Distribution>('distributions').findOne({ weekId });
+
+    // Get batch count if distribution exists
+    let batchCount = 0;
+    if (distribution) {
+      batchCount = await db.collection('batches').countDocuments({ distributionId: distribution._id });
+    }
 
     // Check for running jobs
     const runningJobs = await db.collection<Job>('jobs').find({
@@ -1349,11 +1383,76 @@ export async function getWeekStatus(req: Request, res: Response): Promise<void> 
     const isAirdropRunning = runningJobs.some(j => j.type === 'airdrop')
       && (!distribution || distribution.status !== 'completed');
 
-    // Build status
+    // Build snapshot step status with holder count
+    const snapshotStatus = getStepStatusFromSnapshot(snapshot, isSnapshotRunning);
+    if (snapshot && snapshot.totalHolders) {
+      snapshotStatus.holders = snapshot.totalHolders;
+    }
+
+    // Build calculate step status with eligible count
+    const calculateStatus = getCalculateStatus(distribution, isCalculateRunning);
+    if (distribution && distribution.stats?.eligibleHolders) {
+      calculateStatus.eligible = distribution.stats.eligibleHolders;
+    }
+
+    // Check if this week's snapshot IS the oldest one (making it the baseline)
+    // A baseline cycle has a snapshot but no distribution because there was nothing to compare to
+    const isBaselineCycle = oldestSnapshot && snapshot &&
+      oldestSnapshot.weekId === snapshot.weekId && !distribution;
+
+    // Mark as skipped if this was a baseline cycle
+    if (isBaselineCycle) {
+      calculateStatus.status = 'skipped';
+      calculateStatus.reason = 'Baseline snapshot (no previous to compare)';
+    }
+
+    // Build airdrop step status with batch count
+    const airdropStatus = getAirdropStatus(distribution, isAirdropRunning);
+    if (batchCount > 0) {
+      airdropStatus.batches = batchCount;
+    }
+    // Mark as skipped if this was a baseline cycle
+    if (isBaselineCycle) {
+      airdropStatus.status = 'skipped';
+      airdropStatus.reason = 'Baseline cycle (no airdrop)';
+    }
+
+    // Get the snapshots that were actually used for THIS week's distribution
+    let weekPreviousSnapshot = null;
+    let weekCurrentSnapshot = null;
+
+    if (distribution && distribution.previousSnapshotId && distribution.currentSnapshotId) {
+      // Get the actual snapshots used in this distribution's calculation
+      const [prevSnap, currSnap] = await Promise.all([
+        db.collection<Snapshot>('snapshots').findOne({ _id: distribution.previousSnapshotId }),
+        db.collection<Snapshot>('snapshots').findOne({ _id: distribution.currentSnapshotId }),
+      ]);
+
+      if (prevSnap) {
+        weekPreviousSnapshot = {
+          weekId: prevSnap.weekId,
+          holders: prevSnap.totalHolders || 0,
+          completedAt: prevSnap.completedAt || prevSnap.createdAt,
+        };
+      }
+      if (currSnap) {
+        weekCurrentSnapshot = {
+          weekId: currSnap.weekId,
+          holders: currSnap.totalHolders || 0,
+          completedAt: currSnap.completedAt || currSnap.createdAt,
+        };
+      }
+    }
+
+    // Build full status response
     const status: WeekStatus = {
-      snapshot: getStepStatusFromSnapshot(snapshot, isSnapshotRunning),
-      calculate: getCalculateStatus(distribution, isCalculateRunning),
-      airdrop: getAirdropStatus(distribution, isAirdropRunning),
+      totalSnapshots,
+      snapshot: snapshotStatus,
+      calculate: calculateStatus,
+      airdrop: airdropStatus,
+      // Include previous/current snapshot info for THIS week's calculation
+      previousSnapshot: weekPreviousSnapshot,
+      currentSnapshot: weekCurrentSnapshot,
     };
 
     res.json({ success: true, weekId, status });

@@ -60,12 +60,9 @@
   <div class="mt-4 pt-4 border-t border-dark-600">
     <div class="flex flex-wrap gap-6 items-center justify-between">
       <div class="text-xs text-gray-500">
-        <span class="font-medium text-gray-400">4-Step Cron Schedule:</span>
-        <% if (schedule.startSnapshotCron) { %>
-        <span class="text-cyan-400 font-mono ml-2"><%= schedule.startSnapshotCron %></span> Start
-        <% } %>
-        <% if (schedule.endSnapshotCron) { %>
-        → <span class="text-cyan-400 font-mono"><%= schedule.endSnapshotCron %></span> End
+        <span class="font-medium text-gray-400">3-Step Cron Schedule:</span>
+        <% if (schedule.snapshotCron) { %>
+        <span class="text-cyan-400 font-mono ml-2"><%= schedule.snapshotCron %></span> Snapshot
         <% } %>
         <% if (schedule.calculateCron) { %>
         → <span class="text-emerald-400 font-mono"><%= schedule.calculateCron %></span> Calculate
@@ -154,15 +151,15 @@
   </div>
 </div>
 
-<!-- Week Progress & Retry Controls -->
+<!-- Cycle Progress & Controls -->
 <div class="bg-dark-700 border border-dark-500 rounded-xl mb-8">
   <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
     <div>
-      <h2 class="text-base font-medium text-white">Week Progress & Controls</h2>
-      <p class="text-gray-500 text-xs mt-0.5">Retry failed steps or manually trigger for specific week</p>
+      <h2 class="text-base font-medium text-white">Cycle Progress</h2>
+      <p class="text-gray-500 text-xs mt-0.5">Each snapshot compares with previous to calculate rewards</p>
     </div>
     <div class="flex items-center gap-3">
-      <label class="text-xs text-gray-500">Week:</label>
+      <label class="text-xs text-gray-500">Cycle:</label>
       <select id="weekSelector" onchange="loadWeekStatus()"
               class="bg-dark-600 border border-dark-500 rounded px-3 py-1.5 text-sm text-white font-mono">
         <!-- Populated by JS -->
@@ -171,87 +168,113 @@
   </div>
 
   <div class="p-5">
-    <!-- 4-Step Progress -->
+    <!-- Cycle Info Banner -->
+    <div id="cycleInfoBanner" class="mb-4 p-3 rounded-lg bg-dark-600/50 border border-dark-500">
+      <div class="flex items-start gap-2">
+        <span id="cycleInfoIcon" class="text-lg">📊</span>
+        <div>
+          <p id="cycleInfoTitle" class="text-sm font-medium text-white">Loading...</p>
+          <p id="cycleInfoDesc" class="text-xs text-gray-400 mt-0.5">—</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3-Step Progress -->
     <div class="flex items-center justify-between mb-6">
-      <!-- Step 1: Start Snapshot -->
+      <!-- Step 1: Snapshot -->
       <div id="step1" class="flex-1 text-center">
-        <div id="step1Icon" class="w-12 h-12 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
-          <span class="text-gray-500">1</span>
+        <div id="step1Icon" class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
+          <span class="text-gray-500 text-lg">📸</span>
         </div>
-        <p class="text-xs text-gray-500 mb-1">Start Snapshot</p>
+        <p class="text-xs text-gray-400 font-medium mb-1">Snapshot</p>
         <p id="step1Status" class="text-xs text-gray-600">—</p>
-        <button id="step1Btn" onclick="retryStep('snapshot-start')"
+        <p id="step1Info" class="text-xs text-gray-500 mt-1">—</p>
+        <button id="step1Btn" onclick="retryStep('snapshot')"
                 class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-400 rounded border border-dark-500 hover:border-cyan-500/50 transition-colors hidden">
           Retry
         </button>
       </div>
 
-      <div class="w-16 h-0.5 bg-dark-600" id="line1"></div>
+      <div class="w-20 h-0.5 bg-dark-600 relative" id="line1">
+        <span class="absolute -top-5 left-1/2 -translate-x-1/2 text-xs text-gray-600">compare</span>
+      </div>
 
-      <!-- Step 2: End Snapshot -->
+      <!-- Step 2: Calculate -->
       <div id="step2" class="flex-1 text-center">
-        <div id="step2Icon" class="w-12 h-12 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
-          <span class="text-gray-500">2</span>
+        <div id="step2Icon" class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
+          <span class="text-gray-500 text-lg">🧮</span>
         </div>
-        <p class="text-xs text-gray-500 mb-1">End Snapshot</p>
+        <p class="text-xs text-gray-400 font-medium mb-1">Calculate</p>
         <p id="step2Status" class="text-xs text-gray-600">—</p>
-        <button id="step2Btn" onclick="retryStep('snapshot-end')"
-                class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-400 rounded border border-dark-500 hover:border-cyan-500/50 transition-colors hidden">
-          Retry
-        </button>
-      </div>
-
-      <div class="w-16 h-0.5 bg-dark-600" id="line2"></div>
-
-      <!-- Step 3: Calculate -->
-      <div id="step3" class="flex-1 text-center">
-        <div id="step3Icon" class="w-12 h-12 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
-          <span class="text-gray-500">3</span>
-        </div>
-        <p class="text-xs text-gray-500 mb-1">Calculate</p>
-        <p id="step3Status" class="text-xs text-gray-600">—</p>
-        <button id="step3Btn" onclick="retryStep('calculate')"
+        <p id="step2Info" class="text-xs text-gray-500 mt-1">—</p>
+        <button id="step2Btn" onclick="retryStep('calculate')"
                 class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-emerald-500/20 text-gray-400 hover:text-emerald-400 rounded border border-dark-500 hover:border-emerald-500/50 transition-colors hidden">
           Retry
         </button>
       </div>
 
-      <div class="w-16 h-0.5 bg-dark-600" id="line3"></div>
+      <div class="w-20 h-0.5 bg-dark-600" id="line2"></div>
 
-      <!-- Step 4: Airdrop -->
-      <div id="step4" class="flex-1 text-center">
-        <div id="step4Icon" class="w-12 h-12 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
-          <span class="text-gray-500">4</span>
+      <!-- Step 3: Airdrop -->
+      <div id="step3" class="flex-1 text-center">
+        <div id="step3Icon" class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
+          <span class="text-gray-500 text-lg">💸</span>
         </div>
-        <p class="text-xs text-gray-500 mb-1">Airdrop</p>
-        <p id="step4Status" class="text-xs text-gray-600">—</p>
-        <button id="step4Btn" onclick="retryStep('airdrop')"
+        <p class="text-xs text-gray-400 font-medium mb-1">Airdrop</p>
+        <p id="step3Status" class="text-xs text-gray-600">—</p>
+        <p id="step3Info" class="text-xs text-gray-500 mt-1">—</p>
+        <button id="step3Btn" onclick="retryStep('airdrop')"
                 class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-yellow-500/20 text-gray-400 hover:text-yellow-400 rounded border border-dark-500 hover:border-yellow-500/50 transition-colors hidden">
           Retry
         </button>
       </div>
     </div>
 
+    <!-- Snapshot Comparison Info -->
+    <div id="snapshotComparison" class="bg-dark-800/50 rounded-lg p-3 mb-4 hidden">
+      <!-- Normal comparison view -->
+      <div id="comparisonContent">
+        <p class="text-xs text-gray-500 mb-2">MIN Balance Comparison (used for this cycle):</p>
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+          <div>
+            <p class="text-gray-500">Previous Snapshot</p>
+            <p id="prevSnapshotId" class="text-cyan-400 font-mono">—</p>
+            <p id="prevSnapshotHolders" class="text-gray-400">—</p>
+          </div>
+          <div class="flex items-center justify-center">
+            <span class="text-gray-600">→ MIN() →</span>
+          </div>
+          <div>
+            <p class="text-gray-500">Current Snapshot</p>
+            <p id="currSnapshotId" class="text-cyan-400 font-mono">—</p>
+            <p id="currSnapshotHolders" class="text-gray-400">—</p>
+          </div>
+        </div>
+      </div>
+      <!-- Baseline view -->
+      <div id="baselineContent" class="hidden text-center py-2">
+        <p class="text-xs text-yellow-400 mb-1">📋 Baseline Snapshot</p>
+        <p class="text-xs text-gray-500">This was the first snapshot. No comparison possible.</p>
+        <p class="text-xs text-gray-600 mt-1">Used as "previous" for the next cycle.</p>
+      </div>
+    </div>
+
     <!-- Manual Trigger Buttons -->
     <div class="border-t border-dark-600 pt-4">
       <div class="flex flex-wrap gap-3 items-center justify-between">
-        <span class="text-xs text-gray-500">Manual Triggers (for selected week):</span>
+        <span class="text-xs text-gray-500">Manual Triggers:</span>
         <div class="flex flex-wrap gap-2">
-          <button onclick="triggerStep('snapshot-start')" id="btnTriggerStart"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-xs rounded border border-dark-500 transition-colors disabled:opacity-50">
-            1. Start Snapshot
-          </button>
-          <button onclick="triggerStep('snapshot-end')" id="btnTriggerEnd"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-xs rounded border border-dark-500 transition-colors disabled:opacity-50">
-            2. End Snapshot
+          <button onclick="triggerStep('snapshot')" id="btnTriggerSnapshot"
+            class="px-3 py-1.5 bg-dark-600 hover:bg-cyan-500/20 text-gray-300 hover:text-cyan-400 text-xs rounded border border-dark-500 hover:border-cyan-500/50 transition-colors">
+            📸 Take Snapshot
           </button>
           <button onclick="triggerStep('calculate')" id="btnTriggerCalc"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-xs rounded border border-dark-500 transition-colors disabled:opacity-50">
-            3. Calculate
+            class="px-3 py-1.5 bg-dark-600 hover:bg-emerald-500/20 text-gray-300 hover:text-emerald-400 text-xs rounded border border-dark-500 hover:border-emerald-500/50 transition-colors">
+            🧮 Calculate
           </button>
           <button onclick="triggerStep('airdrop')" id="btnTriggerAirdrop"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-xs rounded border border-dark-500 transition-colors disabled:opacity-50">
-            4. Airdrop
+            class="px-3 py-1.5 bg-dark-600 hover:bg-yellow-500/20 text-gray-300 hover:text-yellow-400 text-xs rounded border border-dark-500 hover:border-yellow-500/50 transition-colors">
+            💸 Airdrop
           </button>
         </div>
       </div>
@@ -451,52 +474,173 @@ async function loadWeekStatus() {
 }
 
 function updateStepUI(status) {
-  // Step 1: Start Snapshot
-  updateStep(1, status.startSnapshot);
+  // Update cycle info banner
+  updateCycleInfo(status);
 
-  // Step 2: End Snapshot
-  updateStep(2, status.endSnapshot);
+  // Step 1: Snapshot (current cycle)
+  updateStep(1, status.snapshot, status.snapshot?.holders ? `${status.snapshot.holders.toLocaleString()} holders` : null);
 
-  // Step 3: Calculate
-  updateStep(3, status.calculate);
+  // Step 2: Calculate
+  updateStep(2, status.calculate, status.calculate?.eligible ? `${status.calculate.eligible.toLocaleString()} eligible` : null);
 
-  // Step 4: Airdrop
-  updateStep(4, status.airdrop);
+  // Step 3: Airdrop
+  updateStep(3, status.airdrop, status.airdrop?.batches ? `${status.airdrop.batches} batches` : null);
 
   // Update connecting lines
-  updateLine(1, status.startSnapshot?.status === 'completed');
-  updateLine(2, status.endSnapshot?.status === 'completed');
-  updateLine(3, status.calculate?.status === 'completed');
+  updateLine(1, status.snapshot?.status === 'completed');
+  updateLine(2, status.calculate?.status === 'completed');
+
+  // Update snapshot comparison section
+  updateSnapshotComparison(status);
 }
 
-function updateStep(num, stepStatus) {
+function updateCycleInfo(status) {
+  const banner = document.getElementById('cycleInfoBanner');
+  const icon = document.getElementById('cycleInfoIcon');
+  const title = document.getElementById('cycleInfoTitle');
+  const desc = document.getElementById('cycleInfoDesc');
+
+  // Check if this specific week was a baseline (first snapshot with no distribution)
+  const hasSnapshot = status.snapshot?.status === 'completed';
+  const hasCalculation = status.calculate?.status === 'completed';
+  const hasAirdrop = status.airdrop?.status === 'completed';
+  const wasSkipped = status.calculate?.status === 'skipped';
+
+  // Determine cycle type based on this week's data
+  if (!hasSnapshot) {
+    // No snapshot yet for this week
+    banner.className = 'mb-4 p-3 rounded-lg bg-gray-500/10 border border-gray-500/30';
+    icon.textContent = '⏳';
+    title.textContent = 'Pending';
+    title.className = 'text-sm font-medium text-gray-400';
+    desc.textContent = 'Waiting for snapshot to be taken for this cycle.';
+  } else if (wasSkipped || (!hasCalculation && !status.previousSnapshot)) {
+    // This was a baseline cycle (first snapshot, no previous to compare)
+    banner.className = 'mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30';
+    icon.textContent = '📋';
+    title.textContent = 'Baseline Snapshot';
+    title.className = 'text-sm font-medium text-yellow-400';
+    desc.textContent = 'First snapshot taken as baseline. No airdrop for this cycle (nothing to compare yet).';
+  } else if (hasAirdrop) {
+    // Fully completed cycle
+    banner.className = 'mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30';
+    icon.textContent = '✅';
+    title.textContent = 'Cycle Complete';
+    title.className = 'text-sm font-medium text-emerald-400';
+    const eligible = status.calculate?.eligible || 0;
+    desc.textContent = `Airdrop completed! ${eligible.toLocaleString()} holders received rewards.`;
+  } else if (hasCalculation) {
+    // Calculated but not yet airdropped
+    banner.className = 'mb-4 p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30';
+    icon.textContent = '🎯';
+    title.textContent = 'Ready for Airdrop';
+    title.className = 'text-sm font-medium text-cyan-400';
+    const eligible = status.calculate?.eligible || 0;
+    desc.textContent = `Calculation complete. ${eligible.toLocaleString()} eligible holders waiting for airdrop.`;
+  } else if (hasSnapshot && status.previousSnapshot) {
+    // Has snapshot and previous exists - ready to calculate
+    banner.className = 'mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30';
+    icon.textContent = '📊';
+    title.textContent = 'Ready to Calculate';
+    title.className = 'text-sm font-medium text-blue-400';
+    desc.textContent = 'Snapshot taken. Ready to compare with previous and calculate rewards.';
+  } else {
+    // Fallback
+    banner.className = 'mb-4 p-3 rounded-lg bg-gray-500/10 border border-gray-500/30';
+    icon.textContent = '❓';
+    title.textContent = 'Unknown State';
+    title.className = 'text-sm font-medium text-gray-400';
+    desc.textContent = 'Check job logs for details.';
+  }
+}
+
+function updateSnapshotComparison(status) {
+  const section = document.getElementById('snapshotComparison');
+  const comparisonContent = document.getElementById('comparisonContent');
+  const baselineContent = document.getElementById('baselineContent');
+
+  // Only show comparison if this cycle has a distribution (meaning it compared snapshots)
+  const hasDistribution = status.calculate?.status === 'completed';
+  const isBaseline = status.calculate?.status === 'skipped';
+
+  if (hasDistribution && status.previousSnapshot && status.currentSnapshot) {
+    // Show comparison for cycles that actually compared snapshots
+    section.classList.remove('hidden');
+    comparisonContent.classList.remove('hidden');
+    baselineContent.classList.add('hidden');
+    document.getElementById('prevSnapshotId').textContent = status.previousSnapshot.weekId || '—';
+    document.getElementById('prevSnapshotHolders').textContent = status.previousSnapshot.holders
+      ? `${status.previousSnapshot.holders.toLocaleString()} holders`
+      : '—';
+    document.getElementById('currSnapshotId').textContent = status.currentSnapshot.weekId || '—';
+    document.getElementById('currSnapshotHolders').textContent = status.currentSnapshot.holders
+      ? `${status.currentSnapshot.holders.toLocaleString()} holders`
+      : '—';
+  } else if (isBaseline && status.snapshot?.status === 'completed') {
+    // Show baseline message
+    section.classList.remove('hidden');
+    comparisonContent.classList.add('hidden');
+    baselineContent.classList.remove('hidden');
+  } else {
+    section.classList.add('hidden');
+  }
+}
+
+function updateStep(num, stepStatus, infoText) {
   const icon = document.getElementById(`step${num}Icon`);
   const statusEl = document.getElementById(`step${num}Status`);
+  const infoEl = document.getElementById(`step${num}Info`);
   const btn = document.getElementById(`step${num}Btn`);
 
+  const icons = ['📸', '🧮', '💸'];
+  const stepIcon = icons[num - 1] || num;
+
   if (!stepStatus || stepStatus.status === 'pending') {
-    icon.innerHTML = `<span class="text-gray-500">${num}</span>`;
-    icon.className = 'w-12 h-12 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2';
+    icon.innerHTML = `<span class="text-gray-500 text-lg">${stepIcon}</span>`;
+    icon.className = 'w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2';
     statusEl.textContent = 'Pending';
     statusEl.className = 'text-xs text-gray-600';
+    if (infoEl) infoEl.textContent = '—';
     btn.classList.add('hidden');
   } else if (stepStatus.status === 'completed') {
     icon.innerHTML = '✓';
-    icon.className = 'w-12 h-12 mx-auto rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-2';
+    icon.className = 'w-14 h-14 mx-auto rounded-full bg-emerald-500/20 text-emerald-400 text-xl flex items-center justify-center mb-2';
     statusEl.textContent = new Date(stepStatus.completedAt).toLocaleTimeString();
     statusEl.className = 'text-xs text-emerald-400';
+    if (infoEl) {
+      infoEl.textContent = infoText || '—';
+      infoEl.className = 'text-xs text-emerald-400/70 mt-1';
+    }
     btn.classList.add('hidden');
   } else if (stepStatus.status === 'failed') {
     icon.innerHTML = '✗';
-    icon.className = 'w-12 h-12 mx-auto rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mb-2';
+    icon.className = 'w-14 h-14 mx-auto rounded-full bg-red-500/20 text-red-400 text-xl flex items-center justify-center mb-2';
     statusEl.textContent = 'Failed';
     statusEl.className = 'text-xs text-red-400';
+    if (infoEl) {
+      infoEl.textContent = stepStatus.error ? stepStatus.error.slice(0, 30) + '...' : '—';
+      infoEl.className = 'text-xs text-red-400/70 mt-1';
+    }
     btn.classList.remove('hidden');
   } else if (stepStatus.status === 'running') {
-    icon.innerHTML = '<div class="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>';
-    icon.className = 'w-12 h-12 mx-auto rounded-full bg-cyan-500/20 flex items-center justify-center mb-2';
+    icon.innerHTML = '<div class="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>';
+    icon.className = 'w-14 h-14 mx-auto rounded-full bg-cyan-500/20 flex items-center justify-center mb-2';
     statusEl.textContent = 'Running...';
-    statusEl.className = 'text-xs text-cyan-400';
+    statusEl.className = 'text-xs text-cyan-400 animate-pulse';
+    if (infoEl) {
+      infoEl.textContent = stepStatus.progress || '—';
+      infoEl.className = 'text-xs text-cyan-400/70 mt-1';
+    }
+    btn.classList.add('hidden');
+  } else if (stepStatus.status === 'skipped') {
+    icon.innerHTML = '⏭';
+    icon.className = 'w-14 h-14 mx-auto rounded-full bg-gray-500/20 text-gray-400 text-xl flex items-center justify-center mb-2';
+    statusEl.textContent = 'Skipped';
+    statusEl.className = 'text-xs text-gray-500';
+    if (infoEl) {
+      infoEl.textContent = stepStatus.reason || 'Need more snapshots';
+      infoEl.className = 'text-xs text-gray-500 mt-1';
+    }
     btn.classList.add('hidden');
   }
 }

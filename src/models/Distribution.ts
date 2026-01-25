@@ -39,8 +39,8 @@ export interface Distribution {
   _id?: ObjectId;
   weekId: string;
   status: DistributionStatus;
-  startSnapshotId: ObjectId;
-  endSnapshotId: ObjectId;
+  previousSnapshotId: ObjectId;   // Previous cycle's snapshot (baseline)
+  currentSnapshotId: ObjectId;    // Current cycle's snapshot
   config: DistributionConfig;
   stats?: DistributionStats;
   createdAt: Date;
@@ -52,8 +52,8 @@ export interface Distribution {
 
 export interface CreateDistributionInput {
   weekId: string;
-  startSnapshotId: ObjectId;
-  endSnapshotId: ObjectId;
+  previousSnapshotId: ObjectId;   // Previous cycle's snapshot (baseline)
+  currentSnapshotId: ObjectId;    // Current cycle's snapshot
   config: DistributionConfig;
 }
 
@@ -73,8 +73,8 @@ export function createDistribution(input: CreateDistributionInput): Distribution
   return {
     weekId: input.weekId,
     status: 'pending',
-    startSnapshotId: input.startSnapshotId,
-    endSnapshotId: input.endSnapshotId,
+    previousSnapshotId: input.previousSnapshotId,
+    currentSnapshotId: input.currentSnapshotId,
     config: input.config,
     stats: {
       totalHolders: 0,

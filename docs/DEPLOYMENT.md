@@ -102,10 +102,10 @@ PRIVATE_KEY=your_private_key_without_0x
 # Moralis
 MORALIS_API_KEY=your_moralis_key
 
-# Admin (generate with: openssl rand -base64 24)
-ADMIN_USERNAME=secure_admin
-ADMIN_PASSWORD=YourSecurePassword123!
-SESSION_SECRET=generate_64_char_random_string
+# Admin (generate with: npm run generate-credentials)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=$2b$12$YOUR_BCRYPT_HASH_HERE
+SESSION_SECRET=your_64_char_random_string_here
 
 # Token
 TOKEN_ADDRESS=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
@@ -186,10 +186,10 @@ PRIVATE_KEY=your_private_key_without_0x
 # Moralis
 MORALIS_API_KEY=your_moralis_key
 
-# Admin
-ADMIN_USERNAME=secure_admin
-ADMIN_PASSWORD=YourSecurePassword123!
-SESSION_SECRET=generate_64_char_random_string
+# Admin (generate with: npm run generate-credentials)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=$2b$12$YOUR_BCRYPT_HASH_HERE
+SESSION_SECRET=your_64_char_random_string_here
 
 # Token
 TOKEN_ADDRESS=0x7F0E9971D3320521Fc88F863E173a4cddBB051bA
@@ -346,13 +346,31 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### Generate Secure Credentials
 
+**Recommended: Use the built-in credential generator**
+
 ```bash
-# Generate admin password
+# Generate bcrypt-hashed password and secure session secret
+npm run generate-credentials
+
+# Or with a custom password
+npm run generate-credentials -- --password "YourSecurePassword123!"
+```
+
+This generates:
+- `ADMIN_PASSWORD` - bcrypt hash (starts with `$2b$12$...`)
+- `SESSION_SECRET` - 64-character random string
+
+**Alternative: Manual generation**
+
+```bash
+# Generate admin password (you'll need to hash it manually)
 openssl rand -base64 24
 
 # Generate session secret
 openssl rand -hex 32
 ```
+
+> **Note:** The system now uses bcrypt password hashing. Store the bcrypt hash in `ADMIN_PASSWORD`, not the plain-text password.
 
 ### Secure the Environment File
 
@@ -371,8 +389,32 @@ chmod 600 .env.production
 | `PRIVATE_KEY` | Wallet private key | `abc123...` (no 0x) |
 | `MORALIS_API_KEY` | Moralis API key | `eyJ...` |
 | `ADMIN_USERNAME` | Dashboard username | `admin` |
-| `ADMIN_PASSWORD` | Dashboard password | `SecurePass123!` |
+| `ADMIN_PASSWORD` | bcrypt hash (use `npm run generate-credentials`) | `$2b$12$...` |
 | `SESSION_SECRET` | 64-char random | `a1b2c3...` |
+
+---
+
+## Utility Scripts
+
+### Generate Credentials
+
+```bash
+# Generate secure bcrypt password hash and session secret
+npm run generate-credentials
+
+# With custom password
+npm run generate-credentials -- --password "MySecurePassword123!"
+```
+
+### Clear Collections
+
+Reset the database while preserving restricted addresses:
+
+```bash
+npm run clear-collections
+```
+
+This deletes all collections **except** `restricted_addresses` (bot-restricted addresses from AQUARI contract).
 
 ---
 
@@ -487,8 +529,8 @@ Before going live:
 
 - [ ] `MODE=production` in .env.production
 - [ ] `PRIVATE_KEY` is set and wallet is funded
-- [ ] Strong `ADMIN_PASSWORD` (16+ chars, mixed case, numbers, symbols)
-- [ ] Random `SESSION_SECRET` (64 chars)
+- [ ] `ADMIN_PASSWORD` is bcrypt hash (run `npm run generate-credentials`)
+- [ ] Random `SESSION_SECRET` (64 chars, from credential generator)
 - [ ] `CONFIRMATIONS=3` for production
 - [ ] MongoDB connected and accessible
 - [ ] Redis connected

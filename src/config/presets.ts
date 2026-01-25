@@ -31,11 +31,10 @@ export interface Preset {
 // FORK MODE - Cron-based test cycles on Anvil
 // ═══════════════════════════════════════════════════════════
 //
-// Configure via .env:
-//   START_SNAPSHOT_CRON=00 17 * * *   (5:00 PM)
-//   END_SNAPSHOT_CRON=05 17 * * *     (5:05 PM)
-//   CALCULATE_CRON=10 17 * * *        (5:10 PM)
-//   AIRDROP_CRON=15 17 * * *          (5:15 PM)
+// Configure via .env (3-step flow):
+//   SNAPSHOT_CRON=0 * * * *     (Every hour at :00)
+//   CALCULATE_CRON=2 * * * *    (Every hour at :02)
+//   AIRDROP_CRON=4 * * * *      (Every hour at :04)
 //
 // ═══════════════════════════════════════════════════════════
 export const FORK_PRESET: Preset = {
@@ -55,11 +54,10 @@ export const FORK_PRESET: Preset = {
 // PRODUCTION MODE - Weekly cron schedule
 // ═══════════════════════════════════════════════════════════
 //
-// Configure via .env:
-//   START_SNAPSHOT_CRON=30 23 * * 0   (Sunday 23:30 UTC)
-//   END_SNAPSHOT_CRON=40 23 * * 0     (Sunday 23:40 UTC)
-//   CALCULATE_CRON=50 23 * * 0        (Sunday 23:50 UTC)
-//   AIRDROP_CRON=00 00 * * 1          (Monday 00:00 UTC)
+// Configure via .env (3-step flow):
+//   SNAPSHOT_CRON=0 0 * * 0       (Sunday 00:00 UTC)
+//   CALCULATE_CRON=5 0 * * 0      (Sunday 00:05 UTC)
+//   AIRDROP_CRON=10 0 * * 0       (Sunday 00:10 UTC)
 //
 // ═══════════════════════════════════════════════════════════
 export const PRODUCTION_PRESET: Preset = {

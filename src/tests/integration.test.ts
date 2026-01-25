@@ -53,7 +53,7 @@ async function testFullJobLifecycle() {
 
   // 1. Create job
   console.log('1. Creating job log...');
-  const created = await createJobLog(jobId, 'snapshot-start', weekId);
+  const created = await createJobLog(jobId, 'snapshot', weekId);
   console.log(`   ✅ Created with status: ${created.status}`);
   console.log(`   Logs: ${created.logs.length}`);
 
@@ -144,8 +144,8 @@ async function testMultipleJobsQuery() {
 
   // Create multiple jobs
   console.log('1. Creating 4 jobs...');
-  const job1 = await createJobLog('multi-1', 'snapshot-start', weekId);
-  const job2 = await createJobLog('multi-2', 'snapshot-end', weekId);
+  const job1 = await createJobLog('multi-1', 'snapshot', weekId);
+  const job2 = await createJobLog('multi-2', 'calculate', weekId);
   const job3 = await createJobLog('multi-3', 'calculate', weekId);
   const job4 = await createJobLog('multi-4', 'airdrop', weekId);
 

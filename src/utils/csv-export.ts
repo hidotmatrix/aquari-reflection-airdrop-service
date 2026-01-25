@@ -64,11 +64,11 @@ export async function exportDistributionRecipients(
 
   const columns: CSVColumn<Recipient>[] = [
     { header: 'Address', accessor: r => r.address },
-    { header: 'Start Balance (wei)', accessor: r => r.balances?.start || '0' },
-    { header: 'End Balance (wei)', accessor: r => r.balances?.end || '0' },
+    { header: 'Previous Balance (wei)', accessor: r => r.balances?.previous || '0' },
+    { header: 'Current Balance (wei)', accessor: r => r.balances?.current || '0' },
     { header: 'MIN Balance (wei)', accessor: r => r.balances?.min || '0' },
-    { header: 'Start Balance (tokens)', accessor: r => formatTokens(r.balances?.start) },
-    { header: 'End Balance (tokens)', accessor: r => formatTokens(r.balances?.end) },
+    { header: 'Previous Balance (tokens)', accessor: r => formatTokens(r.balances?.previous) },
+    { header: 'Current Balance (tokens)', accessor: r => formatTokens(r.balances?.current) },
     { header: 'MIN Balance (tokens)', accessor: r => formatTokens(r.balances?.min) },
     { header: 'Reward (wei)', accessor: r => r.reward || '0' },
     { header: 'Reward (tokens)', accessor: r => r.rewardFormatted || '' },

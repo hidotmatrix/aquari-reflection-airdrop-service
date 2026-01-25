@@ -16,8 +16,8 @@ describe('Recipient Model', () => {
       weekId: '2025-W04',
       address: '0xAbCdEf1234567890123456789012345678901234',
       balances: {
-        start: '1000000000000000000',
-        end: '1500000000000000000',
+        previous: '1000000000000000000',
+        current: '1500000000000000000',
         min: '1000000000000000000',
       },
       reward: '50000000000000000',
@@ -88,10 +88,10 @@ describe('Recipient Model', () => {
         expect(result.reason).toBeUndefined();
       });
 
-      it('should use MIN balance (start < end)', () => {
+      it('should use MIN balance (previous < current)', () => {
         const result = calculateEligibility(
-          '1500000000000000000', // 1.5 tokens (start)
-          '5000000000000000000', // 5 tokens (end)
+          '1500000000000000000', // 1.5 tokens (previous)
+          '5000000000000000000', // 5 tokens (current)
           minRequired
         );
 
@@ -99,10 +99,10 @@ describe('Recipient Model', () => {
         expect(result.minBalance).toBe('1500000000000000000');
       });
 
-      it('should use MIN balance (end < start)', () => {
+      it('should use MIN balance (current < previous)', () => {
         const result = calculateEligibility(
-          '5000000000000000000', // 5 tokens (start)
-          '1500000000000000000', // 1.5 tokens (end)
+          '5000000000000000000', // 5 tokens (previous)
+          '1500000000000000000', // 1.5 tokens (current)
           minRequired
         );
 
@@ -131,7 +131,7 @@ describe('Recipient Model', () => {
     });
 
     describe('ineligible holders', () => {
-      it('should return ineligible when start balance is 0', () => {
+      it('should return ineligible when previous balance is 0', () => {
         const result = calculateEligibility(
           '0',
           '2000000000000000000',
@@ -139,11 +139,11 @@ describe('Recipient Model', () => {
         );
 
         expect(result.isEligible).toBe(false);
-        expect(result.reason).toBe('Not held at week start');
+        expect(result.reason).toBe('Not held in previous snapshot');
         expect(result.minBalance).toBe('0');
       });
 
-      it('should return ineligible when end balance is 0', () => {
+      it('should return ineligible when current balance is 0', () => {
         const result = calculateEligibility(
           '2000000000000000000',
           '0',
@@ -151,7 +151,7 @@ describe('Recipient Model', () => {
         );
 
         expect(result.isEligible).toBe(false);
-        expect(result.reason).toBe('Not held at week end');
+        expect(result.reason).toBe('Not held in current snapshot');
         expect(result.minBalance).toBe('0');
       });
 
@@ -171,7 +171,7 @@ describe('Recipient Model', () => {
         const result = calculateEligibility('0', '0', minRequired);
 
         expect(result.isEligible).toBe(false);
-        expect(result.reason).toBe('Not held at week start');
+        expect(result.reason).toBe('Not held in previous snapshot');
       });
     });
 
@@ -208,11 +208,11 @@ describe('Recipient Model', () => {
     });
 
     describe('anti-gaming protection (MIN method)', () => {
-      it('should prevent gaming by buying right before end snapshot', () => {
-        // User had 0.1 tokens all week, bought 100 tokens right before end
+      it('should prevent gaming by buying right before current snapshot', () => {
+        // User had 0.1 tokens, bought 100 tokens right before current snapshot
         const result = calculateEligibility(
-          '100000000000000000',    // 0.1 tokens at start
-          '100000000000000000000', // 100 tokens at end
+          '100000000000000000',    // 0.1 tokens (previous)
+          '100000000000000000000', // 100 tokens (current)
           minRequired
         );
 
@@ -222,11 +222,11 @@ describe('Recipient Model', () => {
         expect(result.minBalance).toBe('100000000000000000');
       });
 
-      it('should prevent gaming by selling right after start snapshot', () => {
-        // User sold most tokens right after start snapshot
+      it('should prevent gaming by selling right after previous snapshot', () => {
+        // User sold most tokens right after previous snapshot
         const result = calculateEligibility(
-          '100000000000000000000', // 100 tokens at start
-          '100000000000000000',    // 0.1 tokens at end
+          '100000000000000000000', // 100 tokens (previous)
+          '100000000000000000',    // 0.1 tokens (current)
           minRequired
         );
 
@@ -237,10 +237,10 @@ describe('Recipient Model', () => {
       });
 
       it('should reward consistent holders', () => {
-        // User held steady amount all week
+        // User held steady amount between snapshots
         const result = calculateEligibility(
-          '50000000000000000000', // 50 tokens at start
-          '52000000000000000000', // 52 tokens at end (small accumulation)
+          '50000000000000000000', // 50 tokens (previous)
+          '52000000000000000000', // 52 tokens (current) - small accumulation
           minRequired
         );
 

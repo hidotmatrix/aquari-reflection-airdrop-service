@@ -14,7 +14,7 @@ export interface JobLogEntry {
 export interface JobLog {
   _id?: ObjectId;
   jobId: string;
-  type: 'snapshot-start' | 'snapshot-end' | 'calculate' | 'airdrop';
+  type: 'snapshot' | 'calculate' | 'airdrop';
   weekId: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   progress?: {

@@ -29,6 +29,7 @@ import {
   getWalletTokenBalance,
   getWalletAddress,
 } from '../../services/blockchain.service';
+import { verifyPassword } from '../../utils/password';
 
 // ═══════════════════════════════════════════════════════════
 // LOGIN / LOGOUT
@@ -42,14 +43,20 @@ export function showLogin(req: Request, res: Response): void {
   res.render('login', { error: null, layout: false });
 }
 
-export function handleLogin(req: Request, res: Response): void {
+export async function handleLogin(req: Request, res: Response): Promise<void> {
   const { username, password } = req.body;
   const config = getConfig();
 
-  if (
-    username === config.ADMIN_USERNAME &&
-    password === config.ADMIN_PASSWORD
-  ) {
+  // Verify username matches
+  if (username !== config.ADMIN_USERNAME) {
+    res.render('login', { error: 'Invalid username or password', layout: false });
+    return;
+  }
+
+  // Verify password using bcrypt (supports legacy plain-text during migration)
+  const passwordValid = await verifyPassword(password, config.ADMIN_PASSWORD);
+
+  if (passwordValid) {
     req.session.isAuthenticated = true;
     req.session.username = username;
 
@@ -110,11 +117,9 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
       .toArray(),
   ]);
 
-  // Parse available weeks (remove -start/-end suffix and get unique base weeks)
+  // Parse available weeks (filter to valid week format patterns)
   const uniqueWeeks = [...new Set(
-    availableWeeks
-      .map((w: string) => w.replace(/-start$/, '').replace(/-end$/, ''))
-      .filter((w: string) => /^\d{4}-W\d{2}$/.test(w))
+    availableWeeks.filter((w: string) => /^\d{4}-W\d{2}$/.test(w))
   )].sort().reverse();
 
   // Format MIN_BALANCE for display (convert from wei to tokens)
@@ -312,12 +317,12 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
   }
 
   // Fetch snapshots for stats
-  const [startSnapshot, endSnapshot] = await Promise.all([
-    distribution.startSnapshotId
-      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.startSnapshotId })
+  const [previousSnapshot, currentSnapshot] = await Promise.all([
+    distribution.previousSnapshotId
+      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.previousSnapshotId })
       : null,
-    distribution.endSnapshotId
-      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.endSnapshotId })
+    distribution.currentSnapshotId
+      ? db.collection<Snapshot>('snapshots').findOne({ _id: distribution.currentSnapshotId })
       : null,
   ]);
 
@@ -340,17 +345,16 @@ export async function distributionDetail(req: Request, res: Response): Promise<v
     db.collection('batches').find({ distributionId: distribution._id }).sort({ batchNumber: 1 }).toArray(),
   ]);
 
-  // Calculate flow step
+  // Calculate flow step (3-step flow: 1=snapshot, 2=calculate, 3=airdrop)
   let currentStep = 1;
-  if (startSnapshot?.status === 'completed') currentStep = 2;
-  if (endSnapshot?.status === 'completed') currentStep = 3;
-  if (distribution.status === 'ready' || distribution.status === 'processing') currentStep = 4;
-  if (distribution.status === 'completed') currentStep = 5;
+  if (previousSnapshot?.status === 'completed' && currentSnapshot?.status === 'completed') currentStep = 2;
+  if (distribution.status === 'ready' || distribution.status === 'processing') currentStep = 3;
+  if (distribution.status === 'completed') currentStep = 4;
 
   res.render('distribution-detail', {
     distribution,
-    startSnapshot,
-    endSnapshot,
+    previousSnapshot,
+    currentSnapshot,
     batchStats,
     batches,
     recipients,
@@ -625,23 +629,16 @@ export async function deleteDatabase(req: Request, res: Response): Promise<void>
 
 export async function triggerSnapshot(req: Request, res: Response): Promise<void> {
   const db: Db = req.app.locals.db;
-  const { type } = req.body; // 'start' or 'end'
-
-  if (!type || !['start', 'end'].includes(type)) {
-    res.status(400).json({ success: false, error: 'Invalid type. Use "start" or "end"' });
-    return;
-  }
 
   try {
     const weekId = getCurrentWeekId();
-    const snapshotWeekId = `${weekId}-${type}`;
 
-    // Start the job
-    const job = await startJob(db, 'snapshot', snapshotWeekId);
+    // Start the snapshot job for current week
+    const job = await startJob(db, 'snapshot', weekId);
 
     res.json({
       success: true,
-      message: `Snapshot job started for ${snapshotWeekId}`,
+      message: `Snapshot job started for ${weekId}`,
       job: {
         id: job._id,
         type: job.type,
@@ -1288,8 +1285,7 @@ interface StepStatus {
 }
 
 interface WeekStatus {
-  startSnapshot: StepStatus;
-  endSnapshot: StepStatus;
+  snapshot: StepStatus;    // Single snapshot per cycle
   calculate: StepStatus;
   airdrop: StepStatus;
 }
@@ -1307,13 +1303,8 @@ export async function listWeeks(req: Request, res: Response): Promise<void> {
       db.collection('snapshots').distinct('weekId'),
     ]);
 
-    // Extract base weekId from snapshot weekIds (remove -start/-end suffix)
-    const baseSnapshotWeeks = snapshotWeeks.map((w: string) =>
-      w.replace(/-start$/, '').replace(/-end$/, '')
-    );
-
-    // Combine and dedupe
-    const allWeeks = [...new Set([...distWeeks, ...baseSnapshotWeeks])];
+    // Combine and dedupe (snapshots now use plain weekId, no -start/-end suffix)
+    const allWeeks = [...new Set([...distWeeks, ...snapshotWeeks])];
 
     // Sort descending (TEST-002 > TEST-001, 2026-W04 > 2026-W03)
     allWeeks.sort((a, b) => b.localeCompare(a));
@@ -1326,7 +1317,7 @@ export async function listWeeks(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * Get the status of all 4 steps for a specific week
+ * Get the status of all 3 steps for a specific week
  */
 export async function getWeekStatus(req: Request, res: Response): Promise<void> {
   const db: Db = req.app.locals.db;
@@ -1338,40 +1329,29 @@ export async function getWeekStatus(req: Request, res: Response): Promise<void> 
   }
 
   try {
-    // Check for snapshots
-    const startSnapshot = await db.collection<Snapshot>('snapshots').findOne({
-      weekId: `${weekId}-start`
-    });
-
-    const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({
-      weekId: `${weekId}-end`
-    });
+    // Check for snapshot (single snapshot per cycle now)
+    const snapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId });
 
     // Check for distribution (calculate step)
-    const distribution = await db.collection<Distribution>('distributions').findOne({
-      weekId
-    });
+    const distribution = await db.collection<Distribution>('distributions').findOne({ weekId });
 
-    // Check for running jobs - get specific weekIds
+    // Check for running jobs
     const runningJobs = await db.collection<Job>('jobs').find({
-      weekId: { $regex: weekId },
+      weekId,
       status: 'running'
     }).toArray();
 
-    // Check which specific jobs are running (but not if snapshot is already completed)
-    const isStartSnapshotRunning = runningJobs.some(j => j.weekId === `${weekId}-start` && j.type === 'snapshot')
-      && (!startSnapshot || startSnapshot.status !== 'completed');
-    const isEndSnapshotRunning = runningJobs.some(j => j.weekId === `${weekId}-end` && j.type === 'snapshot')
-      && (!endSnapshot || endSnapshot.status !== 'completed');
-    const isCalculateRunning = runningJobs.some(j => j.weekId === weekId && j.type === 'calculation')
+    // Check which specific jobs are running
+    const isSnapshotRunning = runningJobs.some(j => j.type === 'snapshot')
+      && (!snapshot || snapshot.status !== 'completed');
+    const isCalculateRunning = runningJobs.some(j => j.type === 'calculation')
       && (!distribution || !['ready', 'processing', 'completed'].includes(distribution.status));
-    const isAirdropRunning = runningJobs.some(j => j.weekId === weekId && j.type === 'airdrop')
+    const isAirdropRunning = runningJobs.some(j => j.type === 'airdrop')
       && (!distribution || distribution.status !== 'completed');
 
     // Build status
     const status: WeekStatus = {
-      startSnapshot: getStepStatusFromSnapshot(startSnapshot, isStartSnapshotRunning),
-      endSnapshot: getStepStatusFromSnapshot(endSnapshot, isEndSnapshotRunning),
+      snapshot: getStepStatusFromSnapshot(snapshot, isSnapshotRunning),
       calculate: getCalculateStatus(distribution, isCalculateRunning),
       airdrop: getAirdropStatus(distribution, isAirdropRunning),
     };
@@ -1455,11 +1435,8 @@ export async function triggerWeekStep(req: Request, res: Response): Promise<void
     let job;
 
     switch (step) {
-      case 'snapshot-start':
-        job = await startJob(db, 'snapshot', `${weekId}-start`);
-        break;
-      case 'snapshot-end':
-        job = await startJob(db, 'snapshot', `${weekId}-end`);
+      case 'snapshot':
+        job = await startJob(db, 'snapshot', weekId);
         break;
       case 'calculate':
         job = await startJob(db, 'calculation', weekId);
@@ -1507,7 +1484,7 @@ export async function triggerWeekStep(req: Request, res: Response): Promise<void
         job = await startJob(db, 'airdrop', weekId);
         break;
       default:
-        res.status(400).json({ success: false, error: `Invalid step: ${step}` });
+        res.status(400).json({ success: false, error: `Invalid step: ${step}. Use "snapshot", "calculate", or "airdrop"` });
         return;
     }
 
@@ -1544,17 +1521,14 @@ export async function retryWeekStep(req: Request, res: Response): Promise<void> 
     let job;
 
     switch (step) {
-      case 'snapshot-start':
+      case 'snapshot':
         // Delete failed snapshot and retry
-        await db.collection('snapshots').deleteOne({ weekId: `${weekId}-start` });
-        await db.collection('holders').deleteMany({ snapshotId: { $regex: `${weekId}-start` } });
-        job = await startJob(db, 'snapshot', `${weekId}-start`);
-        break;
-
-      case 'snapshot-end':
-        await db.collection('snapshots').deleteOne({ weekId: `${weekId}-end` });
-        await db.collection('holders').deleteMany({ snapshotId: { $regex: `${weekId}-end` } });
-        job = await startJob(db, 'snapshot', `${weekId}-end`);
+        const existingSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId });
+        if (existingSnapshot) {
+          await db.collection('holders').deleteMany({ snapshotId: existingSnapshot._id });
+          await db.collection('snapshots').deleteOne({ _id: existingSnapshot._id });
+        }
+        job = await startJob(db, 'snapshot', weekId);
         break;
 
       case 'calculate':
@@ -1596,7 +1570,7 @@ export async function retryWeekStep(req: Request, res: Response): Promise<void> 
         break;
 
       default:
-        res.status(400).json({ success: false, error: `Invalid step: ${step}` });
+        res.status(400).json({ success: false, error: `Invalid step: ${step}. Use "snapshot", "calculate", or "airdrop"` });
         return;
     }
 

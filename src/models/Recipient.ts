@@ -12,9 +12,9 @@ export type RecipientStatus =
   | 'failed';
 
 export interface RecipientBalances {
-  start: string;
-  end: string;
-  min: string;
+  previous: string;    // Balance from previous snapshot (baseline)
+  current: string;     // Balance from current snapshot
+  min: string;         // MIN(previous, current) - used for reward calculation
 }
 
 export interface Recipient {
@@ -89,25 +89,25 @@ export interface EligibilityResult {
 }
 
 export function calculateEligibility(
-  startBalance: string,
-  endBalance: string,
+  previousBalance: string,
+  currentBalance: string,
   minRequired: string
 ): EligibilityResult {
-  const start = BigInt(startBalance);
-  const end = BigInt(endBalance);
+  const previous = BigInt(previousBalance);
+  const current = BigInt(currentBalance);
   const min = BigInt(minRequired);
 
   // Must hold at both snapshots
-  if (start === 0n) {
-    return { isEligible: false, reason: 'Not held at week start', minBalance: '0' };
+  if (previous === 0n) {
+    return { isEligible: false, reason: 'Not held in previous snapshot', minBalance: '0' };
   }
 
-  if (end === 0n) {
-    return { isEligible: false, reason: 'Not held at week end', minBalance: '0' };
+  if (current === 0n) {
+    return { isEligible: false, reason: 'Not held in current snapshot', minBalance: '0' };
   }
 
-  // Calculate MIN balance
-  const minBalance = start < end ? start : end;
+  // Calculate MIN balance (anti-gaming: rewards based on lowest balance between snapshots)
+  const minBalance = previous < current ? previous : current;
 
   // Must meet minimum requirement
   if (minBalance < min) {

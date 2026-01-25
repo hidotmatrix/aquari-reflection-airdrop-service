@@ -125,9 +125,6 @@ describe('Environment Config', () => {
 
       const config = getConfig();
       expect(config.SCHEDULE.useFastCycles).toBe(true);
-      expect(config.SCHEDULE.snapshotIntervalMinutes).toBe(10);
-      expect(config.SCHEDULE.calculateDelayMinutes).toBe(5);
-      expect(config.SCHEDULE.airdropDelayMinutes).toBe(5);
     });
 
     it('should use weekly cron for production mode', () => {
@@ -139,19 +136,30 @@ describe('Environment Config', () => {
       expect(config.SCHEDULE.useFastCycles).toBe(false);
     });
 
-    it('should allow override of timing from env', () => {
+    it('should read cron schedules from env', () => {
       process.env.MODE = 'fork';
-      process.env.SNAPSHOT_INTERVAL = '15';
-      process.env.CALCULATE_DELAY = '3';
-      process.env.AIRDROP_DELAY = '2';
-      process.env.AUTO_APPROVE = 'true';
+      process.env.SNAPSHOT_CRON = '0 * * * *';
+      process.env.CALCULATE_CRON = '2 * * * *';
+      process.env.AIRDROP_CRON = '4 * * * *';
       resetConfig();
 
       const config = getConfig();
-      expect(config.SCHEDULE.snapshotIntervalMinutes).toBe(15);
-      expect(config.SCHEDULE.calculateDelayMinutes).toBe(3);
-      expect(config.SCHEDULE.airdropDelayMinutes).toBe(2);
-      expect(config.SCHEDULE.autoApprove).toBe(true);
+      expect(config.SCHEDULE.snapshotCron).toBe('0 * * * *');
+      expect(config.SCHEDULE.calculateCron).toBe('2 * * * *');
+      expect(config.SCHEDULE.airdropCron).toBe('4 * * * *');
+    });
+
+    it('should return null for unset cron values', () => {
+      process.env.MODE = 'fork';
+      delete process.env.SNAPSHOT_CRON;
+      delete process.env.CALCULATE_CRON;
+      delete process.env.AIRDROP_CRON;
+      resetConfig();
+
+      const config = getConfig();
+      expect(config.SCHEDULE.snapshotCron).toBeNull();
+      expect(config.SCHEDULE.calculateCron).toBeNull();
+      expect(config.SCHEDULE.airdropCron).toBeNull();
     });
   });
 

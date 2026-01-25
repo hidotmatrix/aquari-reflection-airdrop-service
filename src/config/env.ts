@@ -23,11 +23,10 @@ interface NetworkConfig {
 
 interface ScheduleConfig {
   useFastCycles: boolean;
-  // Cron-based scheduling - 4 separate cron jobs (Required)
-  startSnapshotCron: string | null;   // Step 1: Take START snapshot
-  endSnapshotCron: string | null;     // Step 2: Take END snapshot
-  calculateCron: string | null;       // Step 3: Calculate rewards
-  airdropCron: string | null;         // Step 4: Auto-airdrop (100% wallet balance)
+  // Cron-based scheduling - 3 separate cron jobs
+  snapshotCron: string | null;        // Step 1: Take snapshot (uses previous as baseline)
+  calculateCron: string | null;       // Step 2: Calculate rewards (if 2+ snapshots exist)
+  airdropCron: string | null;         // Step 3: Auto-airdrop (100% wallet balance)
 }
 
 interface EnvConfig {
@@ -146,17 +145,15 @@ export function validateEnv(): EnvConfig {
     moralisChain: CONTRACTS.MORALIS_CHAIN,
   };
 
-  // Schedule config - 4 separate cron jobs (Required):
-  //   START_SNAPSHOT_CRON → END_SNAPSHOT_CRON → CALCULATE_CRON → AIRDROP_CRON
-  const startSnapshotCron = getEnvVar('START_SNAPSHOT_CRON', false) || null;
-  const endSnapshotCron = getEnvVar('END_SNAPSHOT_CRON', false) || null;
+  // Schedule config - 3 separate cron jobs:
+  //   SNAPSHOT_CRON → CALCULATE_CRON → AIRDROP_CRON
+  const snapshotCron = getEnvVar('SNAPSHOT_CRON', false) || null;
   const calculateCron = getEnvVar('CALCULATE_CRON', false) || null;
   const airdropCron = getEnvVar('AIRDROP_CRON', false) || null;
 
   const schedule: ScheduleConfig = {
     useFastCycles: preset.useFastCycles,
-    startSnapshotCron,
-    endSnapshotCron,
+    snapshotCron,
     calculateCron,
     airdropCron,
   };

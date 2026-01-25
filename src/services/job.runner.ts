@@ -97,15 +97,11 @@ export async function startJob(
 /**
  * Map job type to job log type
  */
-function getJobLogType(type: JobType, weekId: string): JobLog['type'] {
-  if (type === 'snapshot') {
-    if (weekId.endsWith('-start')) return 'snapshot-start';
-    if (weekId.endsWith('-end')) return 'snapshot-end';
-    return 'snapshot-start';
-  }
+function getJobLogType(type: JobType, _weekId: string): JobLog['type'] {
+  if (type === 'snapshot') return 'snapshot';
   if (type === 'calculation') return 'calculate';
   if (type === 'airdrop') return 'airdrop';
-  return 'snapshot-start'; // default for full-flow
+  return 'snapshot'; // default for full-flow
 }
 
 /**
@@ -118,7 +114,7 @@ async function runJobAsync(db: Db, job: Job): Promise<void> {
 
   // Create job log entry in MongoDB for persistence
   try {
-    await createJobLog(jobId, jobLogType, job.weekId.replace(/-start$/, '').replace(/-end$/, ''));
+    await createJobLog(jobId, jobLogType, job.weekId);
     await markJobRunning(jobId);
   } catch (err) {
     // Job log might already exist
@@ -388,34 +384,29 @@ async function runSnapshotJob(ctx: JobContext, weekId: string, jobId: string): P
 async function runCalculationJob(ctx: JobContext, weekId: string, jobId: string): Promise<void> {
   const db = ctx.db;
 
-  await ctx.log(`Calculating rewards for week ${weekId}`);
+  await ctx.log(`Calculating rewards for cycle ${weekId}`);
   await ctx.setProgress(0, 3, 'Loading snapshots...');
 
-  // Get start and end snapshots
-  const startWeekId = `${weekId}-start`;
-  const endWeekId = `${weekId}-end`;
+  // Get the 2 most recent completed snapshots
+  const snapshots = await db.collection<Snapshot>('snapshots')
+    .find({ status: 'completed' })
+    .sort({ createdAt: -1 })
+    .limit(2)
+    .toArray();
 
-  const startSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: startWeekId });
-  const endSnapshot = await db.collection<Snapshot>('snapshots').findOne({ weekId: endWeekId });
-
-  if (!startSnapshot) {
-    throw new Error(`Start snapshot not found: ${startWeekId}`);
-  }
-  if (startSnapshot.status !== 'completed') {
-    throw new Error(`Start snapshot not completed (status: ${startSnapshot.status})`);
+  if (snapshots.length < 2) {
+    throw new Error(`Need at least 2 snapshots to calculate. Found: ${snapshots.length}`);
   }
 
-  if (!endSnapshot) {
-    throw new Error(`End snapshot not found: ${endWeekId}`);
-  }
-  if (endSnapshot.status !== 'completed') {
-    throw new Error(`End snapshot not completed (status: ${endSnapshot.status})`);
-  }
+  // Current snapshot is most recent, previous is second most recent
+  const currentSnapshot = snapshots[0]!;
+  const previousSnapshot = snapshots[1]!;
 
-  await ctx.log(`Found snapshots - Start: ${startSnapshot.totalHolders} holders, End: ${endSnapshot.totalHolders} holders`);
+  await ctx.log(`Previous snapshot: ${previousSnapshot.weekId} (${previousSnapshot.totalHolders} holders)`);
+  await ctx.log(`Current snapshot: ${currentSnapshot.weekId} (${currentSnapshot.totalHolders} holders)`);
   await ctx.setProgress(1, 3, 'Calculating rewards...');
 
-  const result = await calculateRewards(db, weekId, startSnapshot._id!, endSnapshot._id!);
+  const result = await calculateRewards(db, weekId, previousSnapshot._id!, currentSnapshot._id!);
 
   await ctx.setProgress(3, 3, 'Completed');
   await ctx.success(`Rewards calculated: ${result.eligibleCount} eligible, ${result.batchCount} batches`);

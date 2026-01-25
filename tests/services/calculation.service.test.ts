@@ -18,15 +18,15 @@ describe('Calculation Service', () => {
       const db = getTestDb();
       const weekId = '2025-W30';
 
-      // Take start and end snapshots
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      // Take previous and current snapshots (simulating 2 cycles)
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W29');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       const result = await calculateRewards(
         db,
         weekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
 
       expect(result.distribution).toBeDefined();
@@ -39,14 +39,14 @@ describe('Calculation Service', () => {
       const db = getTestDb();
       const weekId = '2025-W31';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W30-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       const result = await calculateRewards(
         db,
         weekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
 
       if (result.eligibleCount > 0) {
@@ -62,11 +62,11 @@ describe('Calculation Service', () => {
       const weekId = '2025-W32';
 
       // Take snapshots first to get some holder addresses
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W31-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       // Get a holder address to exclude
-      const holder = await db.collection('holders').findOne({ weekId: `${weekId}-start` });
+      const holder = await db.collection('holders').findOne({ weekId: '2025-W31-b' });
 
       if (holder) {
         // Set up config with excluded address
@@ -81,8 +81,8 @@ describe('Calculation Service', () => {
         const result = await calculateRewards(
           db,
           weekId,
-          startSnapshot._id!,
-          endSnapshot._id!
+          previousSnapshot._id!,
+          currentSnapshot._id!
         );
 
         expect(result.excludedCount).toBeGreaterThan(0);
@@ -96,8 +96,8 @@ describe('Calculation Service', () => {
       // Insert a completed distribution
       await db.collection<Distribution>('distributions').insertOne({
         weekId,
-        startSnapshotId: new ObjectId(),
-        endSnapshotId: new ObjectId(),
+        previousSnapshotId: new ObjectId(),
+        currentSnapshotId: new ObjectId(),
         config: {
           minBalance: '0',
           rewardPool: '1000',
@@ -110,43 +110,43 @@ describe('Calculation Service', () => {
 
       await expect(
         calculateRewards(db, weekId, new ObjectId(), new ObjectId())
-      ).rejects.toThrow(`Distribution for week ${weekId} already exists`);
+      ).rejects.toThrow(`Distribution for cycle ${weekId} already exists`);
     });
 
-    it('should throw if start snapshot not found', async () => {
+    it('should throw if previous snapshot not found', async () => {
       const db = getTestDb();
       const weekId = '2025-W34';
 
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       await expect(
-        calculateRewards(db, weekId, new ObjectId(), endSnapshot._id!)
-      ).rejects.toThrow('Start or end snapshot not found');
+        calculateRewards(db, weekId, new ObjectId(), currentSnapshot._id!)
+      ).rejects.toThrow('Previous or current snapshot not found');
     });
 
-    it('should throw if end snapshot not found', async () => {
+    it('should throw if current snapshot not found', async () => {
       const db = getTestDb();
       const weekId = '2025-W35';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W34-b');
 
       await expect(
-        calculateRewards(db, weekId, startSnapshot._id!, new ObjectId())
-      ).rejects.toThrow('Start or end snapshot not found');
+        calculateRewards(db, weekId, previousSnapshot._id!, new ObjectId())
+      ).rejects.toThrow('Previous or current snapshot not found');
     });
 
     it('should calculate stats correctly', async () => {
       const db = getTestDb();
       const weekId = '2025-W36';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W35-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       const result = await calculateRewards(
         db,
         weekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
 
       expect(result.distribution.stats).toBeDefined();
@@ -159,15 +159,15 @@ describe('Calculation Service', () => {
       const db = getTestDb();
       const weekId = '2025-W37';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W36-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       const before = new Date();
       const result = await calculateRewards(
         db,
         weekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
       const after = new Date();
 
@@ -179,6 +179,25 @@ describe('Calculation Service', () => {
         after.getTime()
       );
     });
+
+    it('should track config excluded vs bot restricted counts', async () => {
+      const db = getTestDb();
+      const weekId = '2025-W38';
+
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W37-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
+
+      const result = await calculateRewards(
+        db,
+        weekId,
+        previousSnapshot._id!,
+        currentSnapshot._id!
+      );
+
+      // Stats should have the breakdown
+      expect(result.distribution.stats?.configExcluded).toBeDefined();
+      expect(result.distribution.stats?.botRestricted).toBeDefined();
+    });
   });
 
   describe('getDistributionByWeekId', () => {
@@ -186,10 +205,10 @@ describe('Calculation Service', () => {
       const db = getTestDb();
       const weekId = '2025-W40';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W39');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
-      await calculateRewards(db, weekId, startSnapshot._id!, endSnapshot._id!);
+      await calculateRewards(db, weekId, previousSnapshot._id!, currentSnapshot._id!);
 
       const distribution = await getDistributionByWeekId(db, weekId);
       expect(distribution).not.toBeNull();
@@ -208,14 +227,14 @@ describe('Calculation Service', () => {
       const db = getTestDb();
       const weekId = '2025-W41';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W40-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       const { distribution } = await calculateRewards(
         db,
         weekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
 
       const { recipients, total } = await getRecipientsForDistribution(
@@ -233,14 +252,14 @@ describe('Calculation Service', () => {
       const db = getTestDb();
       const weekId = '2025-W42';
 
-      const { snapshot: startSnapshot } = await takeSnapshot(db, `${weekId}-start`);
-      const { snapshot: endSnapshot } = await takeSnapshot(db, `${weekId}-end`);
+      const { snapshot: previousSnapshot } = await takeSnapshot(db, '2025-W41-b');
+      const { snapshot: currentSnapshot } = await takeSnapshot(db, weekId);
 
       const { distribution } = await calculateRewards(
         db,
         weekId,
-        startSnapshot._id!,
-        endSnapshot._id!
+        previousSnapshot._id!,
+        currentSnapshot._id!
       );
 
       const { recipients } = await getRecipientsForDistribution(

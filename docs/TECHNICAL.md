@@ -65,11 +65,11 @@ A **fully autonomous** system that automatically rewards loyal AQUARI token hold
 │                                                                 │
 │  For each holder:                                               │
 │                                                                 │
-│    START Balance (Week Begin)     END Balance (Week End)        │
+│    PREVIOUS Balance (Last Snap)   CURRENT Balance (New Snap)    │
 │           ↓                              ↓                      │
 │           └──────────┬───────────────────┘                      │
 │                      ↓                                          │
-│              MIN(START, END)                                    │
+│            MIN(PREVIOUS, CURRENT)                               │
 │                      ↓                                          │
 │         Is MIN >= 1000 AQUARI?                                  │
 │                      │                                          │
@@ -92,12 +92,12 @@ A **fully autonomous** system that automatically rewards loyal AQUARI token hold
 
 ### Anti-Gaming Examples
 
-| Scenario | Start | End | MIN | Eligible? | Why |
-|----------|-------|-----|-----|-----------|-----|
+| Scenario | Previous | Current | MIN | Eligible? | Why |
+|----------|----------|---------|-----|-----------|-----|
 | Loyal Holder | 10,000 | 10,000 | 10,000 | ✅ Yes | Held full week |
 | Partial Seller | 10,000 | 5,000 | 5,000 | ✅ Yes | Credit = lower amount |
-| Accumulator | 5,000 | 15,000 | 5,000 | ✅ Yes | Credit = starting amount |
-| Last-Minute Buy | 0 | 50,000 | 0 | ❌ No | Wasn't holding at start |
+| Accumulator | 5,000 | 15,000 | 5,000 | ✅ Yes | Credit = previous amount |
+| Last-Minute Buy | 0 | 50,000 | 0 | ❌ No | Wasn't holding before |
 | Dumper | 10,000 | 500 | 500 | ❌ No | Below 1000 minimum |
 
 ---
@@ -505,11 +505,11 @@ MOCK_TRANSACTIONS=false          # true = simulate transactions
 MONGODB_URI=mongodb://localhost:27017/aquari-airdrop
 
 # ═══════════════════════════════════════════════════════════
-# ADMIN AUTH
+# ADMIN AUTH (generate with: npm run generate-credentials)
 # ═══════════════════════════════════════════════════════════
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=secure_password_here
-SESSION_SECRET=random_64_char_string
+ADMIN_PASSWORD=$2b$12$YOUR_BCRYPT_HASH_HERE
+SESSION_SECRET=your_64_char_random_string_here
 
 # ═══════════════════════════════════════════════════════════
 # MORALIS API (Always queries mainnet for real holder data)
@@ -604,7 +604,7 @@ REWARD_TOKEN=AQUARI
 │  recipients         Eligible holders                            │
 │  ├── distributionId Reference                                  │
 │  ├── address        Wallet                                     │
-│  ├── balances       { start, end, min }                        │
+│  ├── balances       { previous, current, min }                 │
 │  ├── reward         Amount in wei                              │
 │  └── txHash         When completed                             │
 │                                                                 │
@@ -692,3 +692,21 @@ npm run dev
 ---
 
 *Last Updated: January 2025*
+
+---
+
+## Security Notes
+
+### Password Hashing
+
+Admin passwords are hashed using bcrypt (12 rounds). Generate secure credentials:
+
+```bash
+npm run generate-credentials
+```
+
+The system supports backward compatibility with plain-text passwords but will show a warning. Always use bcrypt hashes in production.
+
+### Restricted Addresses
+
+The `restricted_addresses` collection stores bot-restricted addresses from the AQUARI contract's antibot system. These addresses are excluded from airdrops. This collection is preserved when running `npm run clear-collections`.

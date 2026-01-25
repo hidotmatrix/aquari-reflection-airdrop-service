@@ -56,11 +56,9 @@ async function getDb(): Promise<Db> {
 /**
  * Helper to determine job type from SnapshotJobData
  */
-function getJobType(data: SnapshotJobData): JobLog['type'] {
-  if (data.type === 'start') return 'snapshot-start';
-  if (data.type === 'end') return 'snapshot-end';
-  // 'full' type runs both snapshots, defaults to snapshot-start for logging
-  return 'snapshot-start';
+function getJobType(_data: SnapshotJobData): JobLog['type'] {
+  // In the new 3-step flow, all snapshots are just 'snapshot' type
+  return 'snapshot';
 }
 
 /**

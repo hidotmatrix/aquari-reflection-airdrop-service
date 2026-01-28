@@ -157,9 +157,15 @@ export function getWeekEndDate(weekId: string): Date {
 }
 
 /**
- * Get the previous cycle ID (handles weekly, daily, and 6hour modes)
+ * Get the previous cycle ID (handles weekly, daily, 6hour, and test modes)
  */
 export function getPreviousWeekId(weekId: string): string {
+  // Handle test mode (TEST-XXX)
+  if (isTestCycleId(weekId)) {
+    const num = parseTestCycleId(weekId);
+    return getTestCycleId(Math.max(1, num - 1));
+  }
+
   // Handle 6-hour mode
   if (is6HourCycleId(weekId)) {
     const { year, day, period } = parse6HourId(weekId);
@@ -189,9 +195,15 @@ export function getPreviousWeekId(weekId: string): string {
 }
 
 /**
- * Get the next cycle ID (handles weekly, daily, and 6hour modes)
+ * Get the next cycle ID (handles weekly, daily, 6hour, and test modes)
  */
 export function getNextWeekId(weekId: string): string {
+  // Handle test mode (TEST-XXX)
+  if (isTestCycleId(weekId)) {
+    const num = parseTestCycleId(weekId);
+    return getTestCycleId(num + 1);
+  }
+
   // Handle 6-hour mode
   if (is6HourCycleId(weekId)) {
     const { year, day, period } = parse6HourId(weekId);

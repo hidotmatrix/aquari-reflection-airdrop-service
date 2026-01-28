@@ -1486,12 +1486,14 @@ function getCalculateStatus(distribution: Distribution | null, isRunning: boolea
   if (!distribution) {
     return { status: 'pending' };
   }
-  // Distribution exists means calculation was done
-  if (['ready', 'processing', 'completed'].includes(distribution.status)) {
+  // Distribution exists means calculation was done successfully
+  // Even if airdrop later failed, calculation itself completed
+  if (distribution.stats?.eligibleHolders !== undefined) {
     return { status: 'completed', completedAt: distribution.createdAt };
   }
-  if (distribution.status === 'failed') {
-    return { status: 'failed', error: 'Calculation failed' };
+  // Fallback: check status for legacy distributions
+  if (['ready', 'processing', 'completed', 'failed'].includes(distribution.status)) {
+    return { status: 'completed', completedAt: distribution.createdAt };
   }
   return { status: 'pending' };
 }

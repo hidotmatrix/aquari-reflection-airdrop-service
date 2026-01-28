@@ -466,15 +466,35 @@ async function initWeekSelector() {
       ).join('');
       selectedWeekId = data.weeks[0];
     } else {
-      // Fallback: generate week IDs
+      // Fallback: generate cycle IDs based on current mode
       const weeks = [];
-      for (let i = 0; i < 5; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - (i * 7));
-        const start = new Date(d.getFullYear(), 0, 1);
-        const days = Math.floor((d - start) / 86400000);
-        const week = Math.ceil((days + start.getDay() + 1) / 7);
-        weeks.push(`${d.getFullYear()}-W${week.toString().padStart(2, '0')}`);
+      if (CYCLE_MODE === '6hour') {
+        // Generate last 8 periods (2 days worth)
+        for (let i = 0; i < 8; i++) {
+          const d = new Date();
+          d.setHours(d.getHours() - (i * 6));
+          const day = getDayOfYear(d);
+          const period = Math.floor(d.getUTCHours() / 6);
+          weeks.push(`${d.getFullYear()}-D${day.toString().padStart(3, '0')}-P${period}`);
+        }
+      } else if (CYCLE_MODE === 'daily') {
+        // Generate last 5 days
+        for (let i = 0; i < 5; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const day = getDayOfYear(d);
+          weeks.push(`${d.getFullYear()}-D${day.toString().padStart(3, '0')}`);
+        }
+      } else {
+        // Weekly mode: generate last 5 weeks
+        for (let i = 0; i < 5; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - (i * 7));
+          const start = new Date(d.getFullYear(), 0, 1);
+          const days = Math.floor((d - start) / 86400000);
+          const week = Math.ceil((days + start.getDay() + 1) / 7);
+          weeks.push(`${d.getFullYear()}-W${week.toString().padStart(2, '0')}`);
+        }
       }
       const uniqueWeeks = [...new Set(weeks)].sort().reverse();
       select.innerHTML = uniqueWeeks.map(w =>

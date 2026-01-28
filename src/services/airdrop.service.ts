@@ -131,8 +131,8 @@ export async function processDistribution(
         `Batch ${batch.batchNumber} completed: ${execution.txHash}`
       );
 
-      // Small delay between batches
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Delay between batches to avoid RPC rate limiting
+      await new Promise(resolve => setTimeout(resolve, 60000));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -167,6 +167,9 @@ export async function processDistribution(
 
       failedCount++;
       logger.error(`Batch ${batch.batchNumber} failed: ${errorMessage}`);
+
+      // Delay after failure too to avoid RPC rate limiting
+      await new Promise(resolve => setTimeout(resolve, 60000));
     }
   }
 

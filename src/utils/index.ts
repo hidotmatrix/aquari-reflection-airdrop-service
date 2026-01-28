@@ -20,6 +20,15 @@ export {
   isValidWeekId,
   getISOWeekNumber,
   getISOWeekYear,
+  getCycleMode,
+  getDayOfYear,
+  getDayId,
+  isDailyCycleId,
+  parseDayId,
+  get6HourPeriod,
+  get6HourId,
+  is6HourCycleId,
+  parse6HourId,
 } from './week';
 export {
   formatTokenAmount,

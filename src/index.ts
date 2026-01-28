@@ -240,13 +240,16 @@ async function main(): Promise<void> {
     app.use(express.static(path.join(__dirname, '..', 'public')));
 
     // Session configuration
+    // Note: secure cookies require HTTPS. Set to false for HTTP access.
+    // For production with HTTPS, set SECURE_COOKIES=true in .env
+    const useSecureCookies = process.env.SECURE_COOKIES === 'true';
     app.use(
       session({
         secret: config.SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
         cookie: {
-          secure: config.NODE_ENV === 'production',
+          secure: useSecureCookies,
           httpOnly: true,
           maxAge: 24 * 60 * 60 * 1000, // 24 hours
           sameSite: 'lax',

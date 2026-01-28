@@ -3,6 +3,7 @@ import { getConfig, getTokenAddress } from '../config/env';
 import { logger } from '../utils/logger';
 import { Job, JobType } from '../models/Job';
 import { Snapshot, Holder, fromMoralisResponse } from '../models';
+import { getPreviousWeekId } from '../utils/week';
 import {
   createNewJob,
   updateJobStatus,
@@ -853,23 +854,7 @@ async function runFullFlowJob(ctx: JobContext, weekId: string, jobId: string): P
   }
 }
 
-/**
- * Get previous week ID (e.g., 2026-W04 -> 2026-W03)
- */
-function getPreviousWeekId(weekId: string): string {
-  const match = weekId.match(/^(\d{4})-W(\d{2})$/);
-  if (!match || !match[1] || !match[2]) return weekId;
-
-  const year = parseInt(match[1], 10);
-  const week = parseInt(match[2], 10);
-
-  if (week === 1) {
-    // Go to previous year's last week (52 or 53)
-    return `${year - 1}-W52`;
-  }
-
-  return `${year}-W${(week - 1).toString().padStart(2, '0')}`;
-}
+// getPreviousWeekId is imported from '../utils/week' - supports weekly, daily, and 6hour modes
 
 // ═══════════════════════════════════════════════════════════
 // Utilities

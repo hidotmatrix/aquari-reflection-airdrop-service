@@ -3,7 +3,7 @@ import { Db, ObjectId } from 'mongodb';
 import { getConfig, getActiveNetwork, getModeName, isForkMode, getTokenAddress, getTokenSymbol, getTokenDecimals } from '../../config/env';
 import { getPagination, LIMITS, buildPaginationMeta } from '../../utils/pagination';
 import { isValidAddress } from '../../utils/format';
-import { getCurrentWeekId } from '../../utils/week';
+import { getCurrentWeekId, getCycleMode } from '../../utils/week';
 import { resetLoginRateLimit } from '../middleware/rate-limiter';
 import { explorerHelpers } from '../../utils/explorer';
 import { getGasPrices, isGasAcceptable, estimateAirdropCost } from '../../utils/gas-oracle';
@@ -187,6 +187,7 @@ export async function dashboard(req: Request, res: Response): Promise<void> {
     minBalance: minBalanceTokens.toString(),
     rewardToken: config.REWARD_TOKEN,
     mode: config.MODE,
+    cycleMode: getCycleMode(),
     modeName: getModeName(),
     isForkMode: isForkMode(),
     network: {

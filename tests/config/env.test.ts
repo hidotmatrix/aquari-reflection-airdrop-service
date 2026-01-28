@@ -166,6 +166,7 @@ describe('Environment Config', () => {
   describe('NETWORK config', () => {
     it('should use fork RPC URL for fork mode', () => {
       delete process.env.RPC_URL;
+      delete process.env.BASE_RPC_URL;
       process.env.MODE = 'fork';
       resetConfig();
 
@@ -175,6 +176,7 @@ describe('Environment Config', () => {
 
     it('should use production RPC for production mode', () => {
       delete process.env.RPC_URL;
+      delete process.env.BASE_RPC_URL;
       process.env.MODE = 'production';
       process.env.PRIVATE_KEY = 'test_key';
       resetConfig();
@@ -184,6 +186,7 @@ describe('Environment Config', () => {
     });
 
     it('should use custom RPC_URL when provided', () => {
+      delete process.env.BASE_RPC_URL;
       process.env.RPC_URL = 'http://custom:8545';
       resetConfig();
 
@@ -310,6 +313,7 @@ describe('Environment Config', () => {
     describe('getRpcUrl', () => {
       it('should return fork RPC for fork mode', () => {
         delete process.env.RPC_URL;
+        delete process.env.BASE_RPC_URL;
         process.env.MODE = 'fork';
         resetConfig();
 

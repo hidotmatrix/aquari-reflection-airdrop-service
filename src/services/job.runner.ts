@@ -667,6 +667,11 @@ async function runAirdropJob(ctx: JobContext, weekId: string, jobId: string): Pr
       failedBatches++;
       processedBatches++;
     }
+
+    // Delay between batches to avoid RPC rate limiting
+    if (processedBatches < batches.length) {
+      await sleep(2000); // 2 second delay
+    }
   }
 
   // Update distribution status

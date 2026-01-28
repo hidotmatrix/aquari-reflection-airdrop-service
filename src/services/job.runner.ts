@@ -698,7 +698,6 @@ async function runAirdropJob(ctx: JobContext, weekId: string, jobId: string): Pr
 
   // Summary
   const totalSentFormatted = (totalSent / BigInt(10 ** 18)).toString();
-  await ctx.success(`Airdrop ${isSimulated ? 'simulation' : 'execution'} completed`);
   await ctx.log(`Results: ${successfulBatches} successful, ${failedBatches} failed`);
   await ctx.log(`Total sent: ${totalSentFormatted} ${distribution.config?.rewardToken || 'ETH'}`);
 
@@ -710,6 +709,18 @@ async function runAirdropJob(ctx: JobContext, weekId: string, jobId: string): Pr
     totalSent: totalSent.toString(),
     totalSentFormatted,
   });
+
+  // If ALL batches failed, throw error so job is marked as failed
+  if (failedBatches > 0 && successfulBatches === 0) {
+    throw new Error(`All ${failedBatches} batches failed. Distribution status: ${newStatus}. Retry after fixing the issue.`);
+  }
+
+  // If some batches failed but some succeeded, log warning but don't fail the job
+  if (failedBatches > 0) {
+    await ctx.warn(`${failedBatches} batches failed and need retry. Run airdrop again to process them.`);
+  } else {
+    await ctx.success(`Airdrop ${isSimulated ? 'simulation' : 'execution'} completed successfully`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

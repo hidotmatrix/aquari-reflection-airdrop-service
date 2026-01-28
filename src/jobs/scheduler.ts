@@ -383,6 +383,33 @@ function getNextCronTime(cronExpr: string | null): Date | null {
       return next;
     }
 
+    // Handle patterns with multiple hours like "0 0,6,12,18 * * *"
+    if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*' && minute && hour && hour.includes(',')) {
+      const targetMinute = parseInt(minute, 10);
+      const hours = hour.split(',').map(h => parseInt(h.trim(), 10)).filter(h => !isNaN(h)).sort((a, b) => a - b);
+
+      if (isNaN(targetMinute) || hours.length === 0) return null;
+
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      // Find the next hour that hasn't passed yet
+      for (const targetHour of hours) {
+        if (targetHour > currentHour || (targetHour === currentHour && targetMinute > currentMinute)) {
+          const next = new Date(now);
+          next.setHours(targetHour, targetMinute, 0, 0);
+          return next;
+        }
+      }
+
+      // All hours today have passed, use first hour tomorrow
+      const next = new Date(now);
+      next.setDate(next.getDate() + 1);
+      next.setHours(hours[0]!, targetMinute, 0, 0);
+      return next;
+    }
+
     // Handle daily patterns like "30 14 * * *"
     if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*' && minute && hour) {
       const targetMinute = parseInt(minute, 10);

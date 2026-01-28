@@ -32,6 +32,16 @@ let wallet: ethers.Wallet | null = null;
 let disperseContract: ethers.Contract | null = null;
 let tokenContract: ethers.Contract | null = null;
 
+// RPC rate limit delay (ms) - helps avoid QuickNode 15 req/s limit
+const RPC_DELAY_MS = 1000;
+
+/**
+ * Helper to add delay between RPC calls
+ */
+async function rpcDelay(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, RPC_DELAY_MS));
+}
+
 /**
  * Initialize blockchain connection
  */
@@ -194,6 +204,7 @@ export async function approveDisperse(amount: string): Promise<string> {
  */
 export async function ensureAllowance(requiredAmount: string): Promise<void> {
   const currentAllowance = BigInt(await getDisperseAllowance());
+  await rpcDelay();
   const required = BigInt(requiredAmount);
 
   if (currentAllowance < required) {
@@ -201,6 +212,7 @@ export async function ensureAllowance(requiredAmount: string): Promise<void> {
     // Approve max uint256 to avoid repeated approvals
     const maxApproval = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
     await approveDisperse(maxApproval);
+    await rpcDelay();
   } else {
     logger.info(`Sufficient allowance: ${currentAllowance}`);
   }
@@ -229,13 +241,14 @@ export async function executeBatchAirdrop(
   // Type guard - contract is definitely not null after this point
   const contract = disperseContract;
 
-  // Check gas price
+  // Check gas price (with delay)
   if (!(await isGasPriceAcceptable())) {
     const currentPrice = await getCurrentGasPrice();
     throw new Error(
       `Gas price too high: ${currentPrice} > ${config.MAX_GAS_PRICE}`
     );
   }
+  await rpcDelay();
 
   // Prepare transaction data
   const addresses = recipients.map(r => r.address);
@@ -246,16 +259,18 @@ export async function executeBatchAirdrop(
     `Executing batch airdrop: ${recipients.length} recipients, total: ${totalAmount} ${getTokenSymbol()}`
   );
 
-  // Ensure we have sufficient token balance
+  // Ensure we have sufficient token balance (with delay)
   const tokenBalance = BigInt(await getWalletTokenBalance());
   if (tokenBalance < totalAmount) {
     throw new Error(
       `Insufficient token balance: ${tokenBalance} < ${totalAmount}`
     );
   }
+  await rpcDelay();
 
-  // Ensure Disperse contract has approval to spend our tokens
+  // Ensure Disperse contract has approval to spend our tokens (with delay)
   await ensureAllowance(totalAmount.toString());
+  await rpcDelay();
 
   // Get token address for the active network
   const tokenAddress = getTokenAddress();
@@ -266,6 +281,7 @@ export async function executeBatchAirdrop(
   // Execute token distribution using disperseTokenSimple
   // This transfers tokens directly from our wallet to recipients
   const disperseTokenSimple = contract.getFunction('disperseTokenSimple');
+  logger.info('Submitting transaction to RPC...');
   const tx = await disperseTokenSimple(
     tokenAddress,
     addresses,
@@ -453,14 +469,16 @@ export async function runPreFlightChecks(
     allowance: { passed: false, message: '', value: '0' },
   };
 
-  // Get current balances and gas prices
-  const [ethBalance, tokenBalance, allowance, gasCheck, gasEstimate] = await Promise.all([
-    getWalletEthBalance(),
-    getWalletTokenBalance(),
-    getDisperseAllowance(),
-    isGasAcceptable(),
-    estimateAirdropCost(recipientCount),
-  ]);
+  // Get current balances and gas prices (sequential with delays to avoid rate limiting)
+  const ethBalance = await getWalletEthBalance();
+  await rpcDelay();
+  const tokenBalance = await getWalletTokenBalance();
+  await rpcDelay();
+  const allowance = await getDisperseAllowance();
+  await rpcDelay();
+  const gasCheck = await isGasAcceptable();
+  await rpcDelay();
+  const gasEstimate = await estimateAirdropCost(recipientCount);
 
   // Check ETH balance (need enough for gas)
   const ethBalanceBigInt = BigInt(ethBalance);

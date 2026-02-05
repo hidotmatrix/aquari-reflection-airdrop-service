@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Db, ObjectId } from 'mongodb';
 import { getConfig, getActiveNetwork, getModeName, isForkMode, getTokenAddress, getTokenSymbol, getTokenDecimals } from '../../config/env';
 import { getPagination, LIMITS, buildPaginationMeta } from '../../utils/pagination';
-import { isValidAddress } from '../../utils/format';
+import { isValidAddress, escapeRegExp } from '../../utils/format';
 import { getCurrentWeekId, getCycleMode } from '../../utils/week';
 import { resetLoginRateLimit } from '../middleware/rate-limiter';
 import { logger } from '../../utils/logger';
@@ -581,8 +581,11 @@ export async function clearData(req: Request, res: Response): Promise<void> {
     const results: Record<string, number> = {};
 
     if (collection === 'all' || !collection) {
-      // Clear all collections - use exact match instead of regex
-      const query = weekId ? { weekId } : {};
+      // Clear all collections - use safe regex match for weeks
+      // This ensures 2025-W05 also matches 2025-W05-start and 2025-W05-end
+      const query = weekId
+        ? { weekId: { $regex: `^${escapeRegExp(weekId)}` } }
+        : {};
 
       results.snapshots = (await db.collection('snapshots').deleteMany(query)).deletedCount;
       results.holders = (await db.collection('holders').deleteMany(query)).deletedCount;
@@ -591,14 +594,16 @@ export async function clearData(req: Request, res: Response): Promise<void> {
       results.batches = (await db.collection('batches').deleteMany(query)).deletedCount;
       results.jobs = (await db.collection('jobs').deleteMany(query)).deletedCount;
     } else {
-      // Clear specific collection - use exact match instead of regex
-      const query = weekId ? { weekId } : {};
+      // Clear specific collection - use safe regex match
+      const query = weekId
+        ? { weekId: { $regex: `^${escapeRegExp(weekId)}` } }
+        : {};
       results[collection] = (await db.collection(collection).deleteMany(query)).deletedCount;
     }
 
     res.json({
       success: true,
-      message: weekId ? `Cleared data for week ${weekId}` : 'Cleared all data',
+      message: weekId ? `Cleared data for week ${weekId} (and variations)` : 'Cleared all data',
       deleted: results,
     });
   } catch (error) {

@@ -26,7 +26,15 @@ export function requireAuth(
   }
 
   // Save intended URL for redirect after login
-  req.session.returnTo = req.originalUrl;
+  // Don't save if it's an API/background request (like job status polling)
+  if (
+    !req.originalUrl.includes('/jobs/') &&
+    !req.originalUrl.includes('/trigger/') &&
+    !req.originalUrl.includes('/api/') &&
+    !req.originalUrl.includes('/dev/')
+  ) {
+    req.session.returnTo = req.originalUrl;
+  }
   res.redirect('/admin/login');
 }
 

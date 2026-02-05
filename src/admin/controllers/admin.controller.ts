@@ -5,6 +5,7 @@ import { getPagination, LIMITS, buildPaginationMeta } from '../../utils/paginati
 import { isValidAddress } from '../../utils/format';
 import { getCurrentWeekId, getCycleMode } from '../../utils/week';
 import { resetLoginRateLimit } from '../middleware/rate-limiter';
+import { logger } from '../../utils/logger';
 import { explorerHelpers } from '../../utils/explorer';
 import { getGasPrices, isGasAcceptable, estimateAirdropCost } from '../../utils/gas-oracle';
 import {
@@ -82,7 +83,10 @@ export async function handleLogin(req: Request, res: Response): Promise<void> {
 }
 
 export function handleLogout(req: Request, res: Response): void {
-  req.session.destroy(() => {
+  req.session.destroy((err) => {
+    if (err) {
+      logger.error('Session destruction failed:', err);
+    }
     res.redirect('/admin/login');
   });
 }
@@ -567,7 +571,7 @@ export async function clearData(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Validate weekId to prevent NoSQL injection
+  // Sanitize weekId cus im schizo
   if (weekId !== undefined && (typeof weekId !== 'string' || weekId.length === 0)) {
     res.status(400).json({ success: false, error: 'Invalid weekId format' });
     return;
@@ -782,9 +786,18 @@ export async function approveAndExecuteAirdrop(req: Request, res: Response): Pro
     return;
   }
 
+  // Validate ObjectId format
+  let objectId: ObjectId;
+  try {
+    objectId = new ObjectId(distributionId);
+  } catch {
+    res.status(400).json({ success: false, error: 'Invalid distributionId format' });
+    return;
+  }
+
   try {
     const distribution = await db.collection<Distribution>('distributions').findOne({
-      _id: new ObjectId(distributionId),
+      _id: objectId,
     });
 
     if (!distribution) {
@@ -1070,9 +1083,18 @@ export async function retryFailedAirdrop(req: Request, res: Response): Promise<v
     return;
   }
 
+  // Validate ObjectId format
+  let objectId: ObjectId;
+  try {
+    objectId = new ObjectId(distributionId);
+  } catch {
+    res.status(400).json({ success: false, error: 'Invalid distributionId format' });
+    return;
+  }
+
   try {
     const distribution = await db.collection<Distribution>('distributions').findOne({
-      _id: new ObjectId(distributionId),
+      _id: objectId,
     });
 
     if (!distribution) {
@@ -1161,9 +1183,18 @@ export async function retryBatch(req: Request, res: Response): Promise<void> {
   const config = getConfig();
   const { id } = req.params;
 
+  // Validate ObjectId format
+  let objectId: ObjectId;
+  try {
+    objectId = new ObjectId(id);
+  } catch {
+    res.status(400).json({ success: false, error: 'Invalid batch ID format' });
+    return;
+  }
+
   try {
     const batch = await db.collection<Batch>('batches').findOne({
-      _id: new ObjectId(id),
+      _id: objectId,
     });
 
     if (!batch) {

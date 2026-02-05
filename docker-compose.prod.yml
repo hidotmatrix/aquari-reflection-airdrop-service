@@ -48,16 +48,19 @@ services:
         required: false
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    volumes:
+      - ./logs/app:/app/logs # Persistent log directory
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m" # Rotate after 50MB
+        max-file: "10" # Keep 10 files (500MB total)
+        compress: "true" # Compress rotated logs
 
   # ─────────────────────────────────────────────────────────
   # MongoDB (Optional - for self-hosted setup)
@@ -71,6 +74,7 @@ services:
       - "27017:27017"
     volumes:
       - mongo_prod_data:/data/db
+      - ./logs/mongodb:/var/log/mongodb # Persistent log directory
     environment:
       MONGO_INITDB_DATABASE: aquari-airdrop
     healthcheck:
@@ -82,8 +86,9 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "10"
+        compress: "true"
     profiles:
       - self-hosted
 
@@ -99,9 +104,10 @@ services:
       - "6379:6379"
     volumes:
       - redis_prod_data:/data
+      - ./logs/redis:/var/log/redis # Persistent log directory
     command: redis-server --appendonly yes
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -109,8 +115,9 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "10"
+        compress: "true"
     profiles:
       - self-hosted
 
@@ -118,64 +125,64 @@ volumes:
   mongo_prod_data:
   redis_prod_data:
 
-# ═══════════════════════════════════════════════════════════
-# QUICK START COMMANDS
-# ═══════════════════════════════════════════════════════════
-#
-# OPTION A - Cloud Services (app only):
-#   docker compose -f docker-compose.prod.yml up -d app
-#   docker compose -f docker-compose.prod.yml logs -f app
-#   docker compose -f docker-compose.prod.yml down
-#
-# OPTION B - Self-Hosted (all services):
-#   docker compose -f docker-compose.prod.yml --profile self-hosted up -d
-#   docker compose -f docker-compose.prod.yml --profile self-hosted logs -f
-#   docker compose -f docker-compose.prod.yml --profile self-hosted down
-#
-# REBUILD after code changes:
-#   npm run build
-#   docker compose -f docker-compose.prod.yml build
-#   docker compose -f docker-compose.prod.yml up -d app
-#
-# VIEW LOGS:
-#   docker compose -f docker-compose.prod.yml logs -f
-#   docker compose -f docker-compose.prod.yml logs -f app
-#
-# ═══════════════════════════════════════════════════════════
-# .env.production TEMPLATE
-# ═══════════════════════════════════════════════════════════
-#
-# NODE_ENV=production
-# PORT=3000
-# MODE=production
-# LOG_LEVEL=info
-#
-# # --- DATABASE (choose one) ---
-# # Cloud (Atlas):
-# MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/aquari-airdrop
-# # Self-hosted:
-# # MONGODB_URI=mongodb://localhost:27017/aquari-airdrop
-#
-# # --- REDIS (choose one) ---
-# # Cloud:
-# REDIS_URL=redis://default:password@redis-host:port
-# # Self-hosted:
-# # REDIS_URL=redis://localhost:6379
-#
-# # --- BLOCKCHAIN ---
-# RPC_URL=https://mainnet.base.org
-# PRIVATE_KEY=your_wallet_private_key
-# MORALIS_API_KEY=your_moralis_api_key
-#
-# # --- ADMIN AUTH ---
-# ADMIN_USERNAME=secure_admin_username
-# ADMIN_PASSWORD=super_secure_password_here
-# SESSION_SECRET=64_character_random_string_for_sessions
-#
-# # --- AIRDROP CONFIG ---
-# MIN_BALANCE=1000
-# BATCH_SIZE=100
-# MAX_GAS_PRICE=50000000000
-# CONFIRMATIONS=3
-#
-# ═══════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════
+    # QUICK START COMMANDS
+    # ═══════════════════════════════════════════════════════════
+    #
+    # OPTION A - Cloud Services (app only):
+    #   docker compose -f docker-compose.prod.yml up -d app
+    #   docker compose -f docker-compose.prod.yml logs -f app
+    #   docker compose -f docker-compose.prod.yml down
+    #
+    # OPTION B - Self-Hosted (all services):
+    #   docker compose -f docker-compose.prod.yml --profile self-hosted up -d
+    #   docker compose -f docker-compose.prod.yml --profile self-hosted logs -f
+    #   docker compose -f docker-compose.prod.yml --profile self-hosted down
+    #
+    # REBUILD after code changes:
+    #   npm run build
+    #   docker compose -f docker-compose.prod.yml build
+    #   docker compose -f docker-compose.prod.yml up -d app
+    #
+    # VIEW LOGS:
+    #   docker compose -f docker-compose.prod.yml logs -f
+    #   docker compose -f docker-compose.prod.yml logs -f app
+    #
+    # ═══════════════════════════════════════════════════════════
+    # .env.production TEMPLATE
+    # ═══════════════════════════════════════════════════════════
+    #
+    # NODE_ENV=production
+    # PORT=3000
+    # MODE=production
+    # LOG_LEVEL=info
+    #
+    # # --- DATABASE (choose one) ---
+    # # Cloud (Atlas):
+    # MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/aquari-airdrop
+    # # Self-hosted:
+    # # MONGODB_URI=mongodb://localhost:27017/aquari-airdrop
+    #
+    # # --- REDIS (choose one) ---
+    # # Cloud:
+    # REDIS_URL=redis://default:password@redis-host:port
+    # # Self-hosted:
+    # # REDIS_URL=redis://localhost:6379
+    #
+    # # --- BLOCKCHAIN ---
+    # RPC_URL=https://mainnet.base.org
+    # PRIVATE_KEY=your_wallet_private_key
+    # MORALIS_API_KEY=your_moralis_api_key
+    #
+    # # --- ADMIN AUTH ---
+    # ADMIN_USERNAME=secure_admin_username
+    # ADMIN_PASSWORD=super_secure_password_here
+    # SESSION_SECRET=64_character_random_string_for_sessions
+    #
+    # # --- AIRDROP CONFIG ---
+    # MIN_BALANCE=1000
+    # BATCH_SIZE=100
+    # MAX_GAS_PRICE=50000000000
+    # CONFIRMATIONS=3
+    #
+    # ═══════════════════════════════════════════════════════════

@@ -259,8 +259,8 @@ async function main(): Promise<void> {
 
     // View engine
     app.set('view engine', 'ejs');
-    // Views are in src/admin/views - resolve from project root
-    const viewsPath = path.join(__dirname, '..', 'src', 'admin', 'views');
+    // Views are in src/admin/views (dev) or dist/admin/views (prod)
+    const viewsPath = path.join(__dirname, 'admin', 'views');
     app.set('views', viewsPath);
     logger.debug(`Views path: ${viewsPath}`);
 

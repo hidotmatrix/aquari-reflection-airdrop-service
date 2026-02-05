@@ -13,8 +13,93 @@
 
 ```
 /root/airdrop/              # Main application
-/var/www/aquari-reflection-airdrop-service/  # Alternative path (if used)
 ```
+
+---
+
+- Same directory structure as above.
+
+### Helper Scripts (Recommended)
+We have provided helper scripts in the `scripts/` directory to simplify usage:
+
+- **Start**: `./scripts/prod-start.sh`
+- **Logs**: `./scripts/prod-logs.sh` (or `./scripts/prod-logs.sh app` for app only)
+- **Stop**: `./scripts/prod-stop.sh`
+- **Update/Rebuild**: `./scripts/prod-rebuild.sh`
+
+### Manual Commands
+If you prefer running commands manually:
+Ensure Docker and Docker Compose are installed.
+
+### 2. Setup
+1. SSH into the server.
+2. Clone the repository:
+   ```bash
+   git clone https://github.com/hidotmatrix/aquari-reflection-airdrop-service.git
+   cd aquari-reflection-airdrop-service
+   ```
+3. Create `.env.production`:
+   ```bash
+   cp .env.production.example .env.production
+   nano .env.production
+   ```
+   **Critical**: Ensure you set `ADMIN_PASSWORD` and `SESSION_SECRET` to secure values.
+
+### 3. Run (Self-Hosted Option)
+Since you chose the self-hosted option (app + DBs), use the `self-hosted` profile.
+
+**1. Configure .env.production**:
+Use the "Self-Hosted" connection strings in your `.env.production` file:
+```env
+# Internal Docker Network URLs
+MONGODB_URI=mongodb://mongodb:27017/aquari-airdrop
+REDIS_URL=redis://redis:6379
+```
+
+**2. Start Services**:
+```bash
+docker compose -f docker-compose.prod.yml --profile self-hosted up -d
+```
+
+### 4. Verify
+- Dashboard: `https://redis.aquari.org/admin`
+- Logs: `docker compose -f docker-compose.prod.yml --profile self-hosted logs -f app`
+
+---
+
+## Nginx Configuration (Reverse Proxy)
+
+To serve the application on `redis.aquari.org`:
+
+### 1. Install Nginx & Certbot
+```bash
+sudo apt install nginx certbot python3-certbot-nginx
+```
+
+### 2. Configure Site
+Copy the provided template:
+```bash
+sudo cp scripts/nginx-aquari.conf /etc/nginx/sites-available/redis.aquari.org
+```
+
+Enable the site:
+```bash
+sudo ln -s /etc/nginx/sites-available/redis.aquari.org /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+### 3. SSL Setup
+Obtain an SSL certificate:
+```bash
+sudo certbot --nginx -d redis.aquari.org
+```
+
+This will automatically update the Nginx config to force HTTPS.
+
+---
+
+## Manual Deployment (Legacy)
 
 ---
 

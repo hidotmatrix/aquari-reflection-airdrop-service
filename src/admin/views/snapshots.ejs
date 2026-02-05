@@ -15,37 +15,91 @@
       </tr>
     </thead>
     <tbody class="divide-y divide-dark-600">
-      <% snapshots.forEach(s => { %>
-      <tr class="hover:bg-dark-600/30 transition-colors">
-        <td class="px-5 py-3 font-mono text-sm text-white"><%= s.weekId %></td>
-        <td class="px-5 py-3">
-          <span class="px-2 py-0.5 text-xs rounded-full
+      <% snapshots.forEach(s=> { %>
+        <tr class="hover:bg-dark-600/30 transition-colors">
+          <td class="px-5 py-3 font-mono text-sm text-white">
+            <%= s.weekId %>
+          </td>
+          <td class="px-5 py-3">
+            <span class="px-2 py-0.5 text-xs rounded-full
             <%= s.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
                s.status === 'failed' ? 'bg-red-500/20 text-red-400' :
                'bg-yellow-500/20 text-yellow-400' %>">
-            <%= s.status %>
-          </span>
-        </td>
-        <td class="px-5 py-3 text-sm text-gray-300"><%= s.totalHolders?.toLocaleString() || 0 %></td>
-        <td class="px-5 py-3 text-sm text-gray-500"><%= new Date(s.timestamp).toLocaleString() %></td>
-        <td class="px-5 py-3">
-          <a href="/admin/snapshots/<%= s._id %>" class="text-sm text-cyan-400 hover:text-cyan-300">View →</a>
-        </td>
-      </tr>
-      <% }) %>
-      <% if (snapshots.length === 0) { %>
-      <tr>
-        <td colspan="5" class="px-5 py-8 text-center text-gray-500 text-sm">No snapshots yet</td>
-      </tr>
-      <% } %>
+              <%= s.status %>
+            </span>
+          </td>
+          <td class="px-5 py-3 text-sm text-gray-300">
+            <%= s.totalHolders?.toLocaleString() || 0 %>
+          </td>
+          <td class="px-5 py-3 text-sm text-gray-500">
+            <%= new Date(s.timestamp).toLocaleString() %>
+          </td>
+          <td class="px-5 py-3">
+            <div class="flex items-center justify-between gap-6">
+              <a href="/admin/snapshots/<%= s._id %>" class="text-sm text-cyan-400 hover:text-cyan-300">View →</a>
+              <button class="delete-snapshot-btn text-red-500 hover:text-red-400 transition-colors"
+                data-id="<%= s._id %>" title="Delete Snapshot">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </td>
+        </tr>
+        <% }) %>
+          <% if (snapshots.length===0) { %>
+            <tr>
+              <td colspan="5" class="px-5 py-8 text-center text-gray-500 text-sm">No snapshots yet</td>
+            </tr>
+            <% } %>
     </tbody>
   </table>
 </div>
 
-<% if (pagination.totalPages > 1) { %>
-<div class="mt-4 flex justify-center gap-2">
-  <% for (let i = 1; i <= pagination.totalPages; i++) { %>
-  <a href="?page=<%= i %>" class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>"><%= i %></a>
+<% if (pagination.totalPages> 1) { %>
+  <div class="mt-4 flex justify-center gap-2">
+    <% for (let i=1; i <=pagination.totalPages; i++) { %>
+      <a href="?page=<%= i %>"
+        class="px-3 py-1 text-sm rounded <%= i === pagination.page ? 'bg-cyan-500 text-white' : 'bg-dark-700 text-gray-400 hover:text-white' %>">
+        <%= i %>
+      </a>
+      <% } %>
+  </div>
   <% } %>
-</div>
-<% } %>
+
+    <script data-cfasync="false">
+      document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.delete-snapshot-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const id = btn.getAttribute('data-id');
+            if (!id) return;
+
+            if (!confirm('Are you sure you want to delete this snapshot? This action cannot be undone.')) return;
+
+            try {
+              // Show loading state
+              const originalContent = btn.innerHTML;
+              btn.innerHTML = '<span class="animate-spin">⌛</span>';
+              btn.disabled = true;
+
+              const res = await fetch(`/admin/snapshots/${id}`, { method: 'DELETE' });
+              const data = await res.json();
+
+              if (data.success) {
+                window.location.reload();
+              } else {
+                alert(data.error || 'Delete failed');
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+              }
+            } catch (e) {
+              alert('Error: ' + e.message);
+              btn.innerHTML = originalContent;
+              btn.disabled = false;
+            }
+          });
+        });
+      });
+    </script>

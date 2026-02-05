@@ -1,12 +1,14 @@
 // ═══════════════════════════════════════════════════════════
 // CSV Export Utility
 // Generate CSV files for distributions, recipients, and batches
+// Uses streaming to prevent memory exhaustion
 // ═══════════════════════════════════════════════════════════
 
 import { Response } from 'express';
-import { Db, ObjectId } from 'mongodb';
+import { Db, ObjectId, Document } from 'mongodb';
 import { Distribution, Recipient, Batch, Holder, Snapshot } from '../models';
 import { formatEth, formatGwei } from './gas-oracle';
+import { Readable, Transform } from 'stream';
 
 interface CSVColumn<T> {
   header: string;
@@ -14,31 +16,62 @@ interface CSVColumn<T> {
 }
 
 /**
- * Convert data array to CSV string
+ * Stream data to CSV response
  */
-function toCSV<T>(data: T[], columns: CSVColumn<T>[]): string {
-  const headers = columns.map(c => c.header).join(',');
-  const rows = data.map(row =>
-    columns.map(col => {
-      const value = col.accessor(row);
-      // Escape quotes and wrap in quotes if contains comma, quote, or newline
-      const stringValue = String(value ?? '');
-      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-        return `"${stringValue.replace(/"/g, '""')}"`;
-      }
-      return stringValue;
-    }).join(',')
-  );
-  return [headers, ...rows].join('\n');
-}
-
-/**
- * Send CSV response
- */
-function sendCSV(res: Response, filename: string, csvContent: string): void {
+function streamCSV<T extends Document>(
+  res: Response,
+  filename: string,
+  cursor: AsyncIterable<T> | T[],
+  columns: CSVColumn<T>[]
+): void {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.send(csvContent);
+
+  // Write header
+  const headers = columns.map(c => c.header).join(',');
+  res.write(headers + '\n');
+
+  // Create transform stream to format rows
+  const transform = new Transform({
+    objectMode: true,
+    transform(chunk: T, encoding, callback) {
+      try {
+        const row = columns.map(col => {
+          const value = col.accessor(chunk);
+          // Escape quotes and wrap in quotes if contains comma, quote, or newline
+          const stringValue = String(value ?? '');
+          if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+          }
+          return stringValue;
+        }).join(',');
+
+        callback(null, row + '\n');
+      } catch (err) {
+        callback(err as Error);
+      }
+    }
+  });
+
+  // Handle stream errors
+  transform.on('error', (err) => {
+    console.error('CSV Stream Error:', err);
+    if (!res.headersSent) {
+      res.status(500).send('Error generating CSV');
+    } else {
+      res.end();
+    }
+  });
+
+  // Pipe source to response
+  if (Array.isArray(cursor)) {
+    // Handle array source
+    const readable = Readable.from(cursor);
+    readable.pipe(transform).pipe(res);
+  } else {
+    // Handle MongoDB cursor source
+    Readable.from(cursor).pipe(transform).pipe(res);
+  }
 }
 
 /**
@@ -57,10 +90,10 @@ export async function exportDistributionRecipients(
     return;
   }
 
-  const recipients = await db.collection<Recipient>('recipients')
+  // Use cursor for streaming
+  const cursor = db.collection<Recipient>('recipients')
     .find({ distributionId: new ObjectId(distributionId) })
-    .sort({ reward: -1 })
-    .toArray();
+    .sort({ reward: -1 });
 
   const columns: CSVColumn<Recipient>[] = [
     { header: 'Address', accessor: r => r.address },
@@ -78,8 +111,7 @@ export async function exportDistributionRecipients(
     { header: 'TX Hash', accessor: r => r.txHash || '' },
   ];
 
-  const csv = toCSV(recipients, columns);
-  sendCSV(res, `distribution-${distribution.weekId}-recipients.csv`, csv);
+  streamCSV(res, `distribution-${distribution.weekId}-recipients.csv`, cursor, columns);
 }
 
 /**
@@ -98,10 +130,9 @@ export async function exportDistributionBatches(
     return;
   }
 
-  const batches = await db.collection<Batch>('batches')
+  const cursor = db.collection<Batch>('batches')
     .find({ distributionId: new ObjectId(distributionId) })
-    .sort({ batchNumber: 1 })
-    .toArray();
+    .sort({ batchNumber: 1 });
 
   const columns: CSVColumn<Batch>[] = [
     { header: 'Batch Number', accessor: b => b.batchNumber },
@@ -119,8 +150,7 @@ export async function exportDistributionBatches(
     { header: 'Last Error', accessor: b => b.lastError || '' },
   ];
 
-  const csv = toCSV(batches, columns);
-  sendCSV(res, `distribution-${distribution.weekId}-batches.csv`, csv);
+  streamCSV(res, `distribution-${distribution.weekId}-batches.csv`, cursor, columns);
 }
 
 /**
@@ -139,10 +169,9 @@ export async function exportSnapshotHolders(
     return;
   }
 
-  const holders = await db.collection<Holder>('holders')
+  const cursor = db.collection<Holder>('holders')
     .find({ snapshotId: new ObjectId(snapshotId) })
-    .sort({ balance: -1 })
-    .toArray();
+    .sort({ balance: -1 });
 
   const columns: CSVColumn<Holder>[] = [
     { header: 'Address', accessor: h => h.address },
@@ -153,8 +182,7 @@ export async function exportSnapshotHolders(
     { header: 'Entity', accessor: h => h.entity || '' },
   ];
 
-  const csv = toCSV(holders, columns);
-  sendCSV(res, `snapshot-${snapshot.weekId}-holders.csv`, csv);
+  streamCSV(res, `snapshot-${snapshot.weekId}-holders.csv`, cursor, columns);
 }
 
 /**
@@ -164,10 +192,10 @@ export async function exportAnalyticsSummary(
   db: Db,
   res: Response
 ): Promise<void> {
-  const distributions = await db.collection<Distribution>('distributions')
+  // Distributions are few enough to load in memory, but we use cursor for consistency
+  const cursor = db.collection<Distribution>('distributions')
     .find({})
-    .sort({ createdAt: -1 })
-    .toArray();
+    .sort({ createdAt: -1 });
 
   const columns: CSVColumn<Distribution>[] = [
     { header: 'Week ID', accessor: d => d.weekId },
@@ -187,8 +215,7 @@ export async function exportAnalyticsSummary(
     { header: 'Completed At', accessor: d => d.completedAt ? new Date(d.completedAt).toISOString() : '' },
   ];
 
-  const csv = toCSV(distributions, columns);
-  sendCSV(res, `analytics-summary-${new Date().toISOString().split('T')[0]}.csv`, csv);
+  streamCSV(res, `analytics-summary-${new Date().toISOString().split('T')[0]}.csv`, cursor, columns);
 }
 
 /**
@@ -198,6 +225,10 @@ export async function exportGasAnalytics(
   db: Db,
   res: Response
 ): Promise<void> {
+  // Complex aggregation, difficult to stream directly without transformation pipeline
+  // Loads into memory but capped by historical batch count. 
+  // For massive scale, this would also need streaming refactor, but it involves processing.
+
   const batches = await db.collection<Batch>('batches')
     .find({ status: 'completed' })
     .sort({ 'execution.confirmedAt': -1 })
@@ -234,8 +265,7 @@ export async function exportGasAnalytics(
     { header: 'Confirmed At', accessor: b => b.execution?.confirmedAt ? new Date(b.execution.confirmedAt).toISOString() : '' },
   ];
 
-  const csv = toCSV(batchesWithGas, columns);
-  sendCSV(res, `gas-analytics-${new Date().toISOString().split('T')[0]}.csv`, csv);
+  streamCSV(res, `gas-analytics-${new Date().toISOString().split('T')[0]}.csv`, batchesWithGas, columns);
 }
 
 /**

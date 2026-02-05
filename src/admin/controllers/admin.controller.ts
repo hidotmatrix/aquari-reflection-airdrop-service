@@ -281,6 +281,61 @@ export async function snapshotDetail(req: Request, res: Response): Promise<void>
   });
 }
 
+export async function deleteSnapshot(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+  const { id } = req.params;
+
+  let objectId: ObjectId;
+  try {
+    objectId = new ObjectId(id);
+  } catch {
+    res.status(400).json({ success: false, error: 'Invalid snapshot ID' });
+    return;
+  }
+
+  try {
+    const snapshot = await db.collection<Snapshot>('snapshots').findOne({ _id: objectId });
+    if (!snapshot) {
+      res.status(404).json({ success: false, error: 'Snapshot not found' });
+      return;
+    }
+
+    // Delete associated holders
+    await db.collection('holders').deleteMany({ snapshotId: objectId });
+
+    // Delete the snapshot
+    await db.collection('snapshots').deleteOne({ _id: objectId });
+
+    res.json({ success: true, message: 'Snapshot deleted successfully' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+/**
+ * Clear completed/failed job history from the database
+ */
+export async function clearJobHistory(req: Request, res: Response): Promise<void> {
+  const db: Db = req.app.locals.db;
+
+  try {
+    // Only delete completed or failed jobs, not running ones
+    const result = await db.collection('jobs').deleteMany({
+      status: { $in: ['completed', 'failed'] }
+    });
+
+    res.json({
+      success: true,
+      message: `Cleared ${result.deletedCount} job records`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
 // ═══════════════════════════════════════════════════════════
 // DISTRIBUTIONS
 // ═══════════════════════════════════════════════════════════

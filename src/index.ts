@@ -242,12 +242,16 @@ async function main(): Promise<void> {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net", "https://cdn.tailwindcss.com", "https://static.cloudflareinsights.com"],
+          scriptSrcAttr: ["'unsafe-inline'"],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
           imgSrc: ["'self'", "data:", "https:"],
+          connectSrc: ["'self'", "https://cdn.tailwindcss.com", "https://cloudflareinsights.com", "https://static.cloudflareinsights.com"], // Tailwind checks for plugins
         },
       },
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      crossOriginEmbedderPolicy: false, // Allow Cloudflare analytics scripts
     }));
     app.use(cors());
     app.use(compression());

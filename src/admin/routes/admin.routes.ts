@@ -24,6 +24,7 @@ router.use(requireAuth);
 router.get('/dashboard', ctrl.dashboard);
 router.get('/snapshots', ctrl.listSnapshots);
 router.get('/snapshots/:id', ctrl.snapshotDetail);
+router.delete('/snapshots/:id', ctrl.deleteSnapshot);
 router.get('/distributions', ctrl.listDistributions);
 router.get('/distributions/:id', ctrl.distributionDetail);
 router.get('/recipients', ctrl.listRecipients);
@@ -47,6 +48,7 @@ router.post('/week/:weekId/retry/:step', ctrl.retryWeekStep);
 // Job status and logs
 router.get('/jobs/status', ctrl.getJobStatusEndpoint);
 router.get('/jobs/:jobId/logs', ctrl.getJobLogs);
+router.delete('/jobs/history', ctrl.clearJobHistory);
 
 // Dev tools (only works in development)
 router.post('/dev/clear-data', ctrl.clearData);

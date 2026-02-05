@@ -19,873 +19,941 @@
       <!-- Minimum Balance -->
       <div>
         <span class="text-gray-500 text-xs uppercase block mb-1">Min Balance</span>
-        <span class="text-lg font-mono text-white"><%= minBalance %> AQUARI</span>
+        <span class="text-lg font-mono text-white">
+          <%= minBalance %> AQUARI
+        </span>
       </div>
       <!-- Reward Token -->
       <div>
         <span class="text-gray-500 text-xs uppercase block mb-1">Reward Token</span>
-        <span class="text-lg font-mono text-white"><%= rewardToken %></span>
+        <span class="text-lg font-mono text-white">
+          <%= rewardToken %>
+        </span>
       </div>
     </div>
     <!-- Mode Indicators -->
     <div class="flex items-center gap-3">
       <% if (isForkMode) { %>
-      <span class="px-3 py-1 text-xs font-medium rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-        FORK MODE
-      </span>
-      <% } else { %>
-      <span class="px-3 py-1 text-xs font-medium rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-        PRODUCTION
-      </span>
-      <% } %>
-      <% if (mockSnapshots) { %>
-      <span class="px-3 py-1 text-xs font-medium rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30">
-        MOCK DATA
-      </span>
-      <% } %>
-      <% if (mockTransactions) { %>
-      <span class="px-3 py-1 text-xs font-medium rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">
-        SIMULATED TX
-      </span>
-      <% } else { %>
-      <span class="px-3 py-1 text-xs font-medium rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
-        LIVE TX
-      </span>
-      <% } %>
+        <span
+          class="px-3 py-1 text-xs font-medium rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+          FORK MODE
+        </span>
+        <% } else { %>
+          <span
+            class="px-3 py-1 text-xs font-medium rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            PRODUCTION
+          </span>
+          <% } %>
+            <% if (mockSnapshots) { %>
+              <span
+                class="px-3 py-1 text-xs font-medium rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30">
+                MOCK DATA
+              </span>
+              <% } %>
+                <% if (mockTransactions) { %>
+                  <span
+                    class="px-3 py-1 text-xs font-medium rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                    SIMULATED TX
+                  </span>
+                  <% } else { %>
+                    <span
+                      class="px-3 py-1 text-xs font-medium rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+                      LIVE TX
+                    </span>
+                    <% } %>
     </div>
   </div>
 
   <!-- Cron Schedule Display -->
   <% if (schedule) { %>
-  <div class="mt-4 pt-4 border-t border-dark-600">
-    <div class="flex flex-wrap gap-6 items-center justify-between">
-      <div class="text-xs text-gray-500">
-        <span class="font-medium text-gray-400">3-Step Cron Schedule:</span>
-        <% if (schedule.snapshotCron) { %>
-        <span class="text-cyan-400 font-mono ml-2"><%= schedule.snapshotCron %></span> Snapshot
-        <% } %>
-        <% if (schedule.calculateCron) { %>
-        → <span class="text-emerald-400 font-mono"><%= schedule.calculateCron %></span> Calculate
-        <% } %>
-        <% if (schedule.airdropCron) { %>
-        → <span class="text-yellow-400 font-mono"><%= schedule.airdropCron %></span> Airdrop
-        <% } %>
-      </div>
+    <div class="mt-4 pt-4 border-t border-dark-600">
+      <div class="flex flex-wrap gap-6 items-center justify-between">
+        <div class="text-xs text-gray-500">
+          <span class="font-medium text-gray-400">3-Step Cron Schedule:</span>
+          <% if (schedule.snapshotCron) { %>
+            <span class="text-cyan-400 font-mono ml-2">
+              <%= schedule.snapshotCron %>
+            </span> Snapshot
+            <% } %>
+              <% if (schedule.calculateCron) { %>
+                → <span class="text-emerald-400 font-mono">
+                  <%= schedule.calculateCron %>
+                </span> Calculate
+                <% } %>
+                  <% if (schedule.airdropCron) { %>
+                    → <span class="text-yellow-400 font-mono">
+                      <%= schedule.airdropCron %>
+                    </span> Airdrop
+                    <% } %>
+        </div>
 
-      <% if (scheduler && scheduler.nextAction && scheduler.nextAction !== 'none' && scheduler.nextAction !== 'stopped') { %>
-      <div class="flex items-center gap-2">
-        <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-        <span class="text-xs text-gray-400">
-          Next: <span class="text-cyan-400 font-medium"><%= scheduler.nextAction.replace(/-/g, ' ') %></span>
-          <% if (scheduler.nextActionTime) { %>
-          at <span class="text-white"><%= new Date(scheduler.nextActionTime).toLocaleTimeString() %></span>
+        <% if (scheduler && scheduler.nextAction && scheduler.nextAction !=='none' && scheduler.nextAction !=='stopped'
+          ) { %>
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
+            <span class="text-xs text-gray-400">
+              Next: <span class="text-cyan-400 font-medium">
+                <%= scheduler.nextAction.replace(/-/g, ' ' ) %>
+              </span>
+              <% if (scheduler.nextActionTime) { %>
+                on <span class="text-white">
+                  <%= new Date(scheduler.nextActionTime).toLocaleDateString('en-US', { month: 'short' , day: 'numeric' ,
+                    year: 'numeric' }) %>
+                </span> at <span class="text-white">
+                  <%= new Date(scheduler.nextActionTime).toLocaleTimeString() %>
+                </span>
+                <% } %>
+            </span>
+          </div>
           <% } %>
-        </span>
       </div>
-      <% } %>
     </div>
-  </div>
-  <% } %>
+    <% } %>
 </div>
 
 <!-- Wallet Status -->
 <% if (wallet && wallet.address) { %>
-<div class="bg-dark-700 border <%= wallet.needsFunding ? 'border-yellow-500/50' : 'border-dark-500' %> rounded-xl p-5 mb-8">
-  <div class="flex flex-wrap gap-6 items-center justify-between">
-    <div class="flex items-center gap-6">
-      <div>
-        <span class="text-gray-500 text-xs uppercase block mb-1">Airdrop Wallet</span>
-        <a href="https://basescan.org/address/<%= wallet.address %>" target="_blank"
-           class="text-sm font-mono text-cyan-400 hover:text-cyan-300">
-          <%= wallet.address.slice(0, 6) %>...<%= wallet.address.slice(-4) %>
-        </a>
-      </div>
-      <div>
-        <span class="text-gray-500 text-xs uppercase block mb-1">ETH (Gas)</span>
-        <span class="text-lg font-mono <%= wallet.needsEth ? 'text-red-400' : 'text-white' %>">
-          <%= wallet.ethBalance %> ETH
-        </span>
-      </div>
-      <div>
-        <span class="text-gray-500 text-xs uppercase block mb-1"><%= wallet.tokenSymbol %> (Airdrop)</span>
-        <span class="text-lg font-mono <%= wallet.needsTokens ? 'text-red-400' : 'text-emerald-400' %>">
-          <%= wallet.tokenBalance %> <%= wallet.tokenSymbol %>
-        </span>
-      </div>
-    </div>
-    <% if (wallet.needsFunding) { %>
-    <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 max-w-md">
-      <div class="flex items-start gap-2">
-        <span class="text-yellow-400 text-lg">⚠️</span>
+  <div
+    class="bg-dark-700 border <%= wallet.needsFunding ? 'border-yellow-500/50' : 'border-dark-500' %> rounded-xl p-5 mb-8">
+    <div class="flex flex-wrap gap-6 items-center justify-between">
+      <div class="flex items-center gap-6">
         <div>
-          <p class="text-yellow-400 text-sm font-medium">Wallet Needs Funding</p>
-          <button onclick="copyAddress('<%= wallet.address %>')"
-                  class="mt-2 text-xs text-cyan-400 hover:text-cyan-300 underline">
-            Copy Address
-          </button>
+          <span class="text-gray-500 text-xs uppercase block mb-1">Airdrop Wallet</span>
+          <a href="https://basescan.org/address/<%= wallet.address %>" target="_blank"
+            class="text-sm font-mono text-cyan-400 hover:text-cyan-300">
+            <%= wallet.address.slice(0, 6) %>...<%= wallet.address.slice(-4) %>
+          </a>
         </div>
-      </div>
-    </div>
-    <% } %>
-  </div>
-</div>
-<% } %>
-
-<!-- Stats Cards -->
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-  <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
-    <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Total Snapshots</p>
-    <p class="text-2xl font-semibold text-white mt-1"><%= totalSnapshots %></p>
-  </div>
-  <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
-    <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Total Distributions</p>
-    <p class="text-2xl font-semibold text-white mt-1"><%= totalDistributions %></p>
-  </div>
-  <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
-    <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Pending Batches</p>
-    <p class="text-2xl font-semibold text-white mt-1"><%= pendingBatches %></p>
-  </div>
-  <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
-    <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Current Week</p>
-    <p id="currentWeekDisplay" class="text-lg font-semibold text-cyan-400 mt-1 font-mono"></p>
-  </div>
-</div>
-
-<!-- Cycle Progress & Controls -->
-<div class="bg-dark-700 border border-dark-500 rounded-xl mb-8">
-  <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
-    <div>
-      <h2 class="text-base font-medium text-white">Cycle Progress</h2>
-      <p class="text-gray-500 text-xs mt-0.5">Each snapshot compares with previous to calculate rewards</p>
-    </div>
-    <div class="flex items-center gap-3">
-      <label class="text-xs text-gray-500">Cycle:</label>
-      <select id="weekSelector" onchange="loadWeekStatus()"
-              class="bg-dark-600 border border-dark-500 rounded px-3 py-1.5 text-sm text-white font-mono">
-        <!-- Populated by JS -->
-      </select>
-    </div>
-  </div>
-
-  <div class="p-5">
-    <!-- Cycle Info Banner -->
-    <div id="cycleInfoBanner" class="mb-4 p-3 rounded-lg bg-dark-600/50 border border-dark-500">
-      <div class="flex items-start gap-2">
-        <span id="cycleInfoIcon" class="text-lg">📊</span>
         <div>
-          <p id="cycleInfoTitle" class="text-sm font-medium text-white">Loading...</p>
-          <p id="cycleInfoDesc" class="text-xs text-gray-400 mt-0.5">—</p>
+          <span class="text-gray-500 text-xs uppercase block mb-1">ETH (Gas)</span>
+          <span class="text-lg font-mono <%= wallet.needsEth ? 'text-red-400' : 'text-white' %>">
+            <%= wallet.ethBalance %> ETH
+          </span>
         </div>
+        <div>
+          <span class="text-gray-500 text-xs uppercase block mb-1">
+            <%= wallet.tokenSymbol %> (Airdrop)
+          </span>
+          <span class="text-lg font-mono <%= wallet.needsTokens ? 'text-red-400' : 'text-emerald-400' %>">
+            <%= wallet.tokenBalance %>
+              <%= wallet.tokenSymbol %>
+          </span>
+        </div>
+      </div>
+      <% if (wallet.needsFunding) { %>
+        <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 max-w-md">
+          <div class="flex items-start gap-2">
+            <span class="text-yellow-400 text-lg">⚠️</span>
+            <div>
+              <p class="text-yellow-400 text-sm font-medium">Wallet Needs Funding</p>
+              <button onclick="copyAddress('<%= wallet.address %>')"
+                class="mt-2 text-xs text-cyan-400 hover:text-cyan-300 underline">
+                Copy Address
+              </button>
+            </div>
+          </div>
+        </div>
+        <% } %>
+    </div>
+  </div>
+  <% } %>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
+        <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Total Snapshots</p>
+        <p class="text-2xl font-semibold text-white mt-1">
+          <%= totalSnapshots %>
+        </p>
+      </div>
+      <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
+        <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Total Distributions</p>
+        <p class="text-2xl font-semibold text-white mt-1">
+          <%= totalDistributions %>
+        </p>
+      </div>
+      <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
+        <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Pending Batches</p>
+        <p class="text-2xl font-semibold text-white mt-1">
+          <%= pendingBatches %>
+        </p>
+      </div>
+      <div class="bg-dark-700 border border-dark-500 rounded-xl p-5">
+        <p class="text-gray-500 text-xs font-medium uppercase tracking-wide">Current Week</p>
+        <p id="currentWeekDisplay" class="text-lg font-semibold text-cyan-400 mt-1 font-mono"></p>
       </div>
     </div>
 
-    <!-- 3-Step Progress -->
-    <div class="flex items-center justify-between mb-6">
-      <!-- Step 1: Snapshot -->
-      <div id="step1" class="flex-1 text-center">
-        <div id="step1Icon" class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
-          <span class="text-gray-500 text-lg">📸</span>
+    <!-- Cycle Progress & Controls -->
+    <div class="bg-dark-700 border border-dark-500 rounded-xl mb-8">
+      <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
+        <div>
+          <h2 class="text-base font-medium text-white">Cycle Progress</h2>
+          <p class="text-gray-500 text-xs mt-0.5">Each snapshot compares with previous to calculate rewards</p>
         </div>
-        <p class="text-xs text-gray-400 font-medium mb-1">Snapshot</p>
-        <p id="step1Status" class="text-xs text-gray-600">—</p>
-        <p id="step1Info" class="text-xs text-gray-500 mt-1">—</p>
-        <button id="step1Btn" onclick="retryStep('snapshot')"
-                class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-400 rounded border border-dark-500 hover:border-cyan-500/50 transition-colors hidden">
-          Retry
-        </button>
+        <div class="flex items-center gap-3">
+          <label class="text-xs text-gray-500">Cycle:</label>
+          <select id="weekSelector" onchange="loadWeekStatus()"
+            class="bg-dark-600 border border-dark-500 rounded px-3 py-1.5 text-sm text-white font-mono">
+            <!-- Populated by JS -->
+          </select>
+        </div>
       </div>
 
-      <div class="w-20 h-0.5 bg-dark-600 relative" id="line1">
-        <span class="absolute -top-5 left-1/2 -translate-x-1/2 text-xs text-gray-600">compare</span>
-      </div>
-
-      <!-- Step 2: Calculate -->
-      <div id="step2" class="flex-1 text-center">
-        <div id="step2Icon" class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
-          <span class="text-gray-500 text-lg">🧮</span>
+      <div class="p-5">
+        <!-- Cycle Info Banner -->
+        <div id="cycleInfoBanner" class="mb-4 p-3 rounded-lg bg-dark-600/50 border border-dark-500">
+          <div class="flex items-start gap-2">
+            <span id="cycleInfoIcon" class="text-lg">📊</span>
+            <div>
+              <p id="cycleInfoTitle" class="text-sm font-medium text-white">Loading...</p>
+              <p id="cycleInfoDesc" class="text-xs text-gray-400 mt-0.5">—</p>
+            </div>
+          </div>
         </div>
-        <p class="text-xs text-gray-400 font-medium mb-1">Calculate</p>
-        <p id="step2Status" class="text-xs text-gray-600">—</p>
-        <p id="step2Info" class="text-xs text-gray-500 mt-1">—</p>
-        <button id="step2Btn" onclick="retryStep('calculate')"
-                class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-emerald-500/20 text-gray-400 hover:text-emerald-400 rounded border border-dark-500 hover:border-emerald-500/50 transition-colors hidden">
-          Retry
-        </button>
-      </div>
 
-      <div class="w-20 h-0.5 bg-dark-600" id="line2"></div>
+        <!-- 3-Step Progress -->
+        <div class="flex items-center justify-between mb-6">
+          <!-- Step 1: Snapshot -->
+          <div id="step1" class="flex-1 text-center">
+            <div id="step1Icon"
+              class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
+              <span class="text-gray-500 text-lg">📸</span>
+            </div>
+            <p class="text-xs text-gray-400 font-medium mb-1">Snapshot</p>
+            <p id="step1Status" class="text-xs text-gray-600">—</p>
+            <p id="step1Info" class="text-xs text-gray-500 mt-1">—</p>
+            <button id="step1Btn" onclick="retryStep('snapshot')"
+              class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-400 rounded border border-dark-500 hover:border-cyan-500/50 transition-colors hidden">
+              Retry
+            </button>
+          </div>
 
-      <!-- Step 3: Airdrop -->
-      <div id="step3" class="flex-1 text-center">
-        <div id="step3Icon" class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
-          <span class="text-gray-500 text-lg">💸</span>
+          <div class="w-20 h-0.5 bg-dark-600 relative" id="line1">
+            <span class="absolute -top-5 left-1/2 -translate-x-1/2 text-xs text-gray-600">compare</span>
+          </div>
+
+          <!-- Step 2: Calculate -->
+          <div id="step2" class="flex-1 text-center">
+            <div id="step2Icon"
+              class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
+              <span class="text-gray-500 text-lg">🧮</span>
+            </div>
+            <p class="text-xs text-gray-400 font-medium mb-1">Calculate</p>
+            <p id="step2Status" class="text-xs text-gray-600">—</p>
+            <p id="step2Info" class="text-xs text-gray-500 mt-1">—</p>
+            <button id="step2Btn" onclick="retryStep('calculate')"
+              class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-emerald-500/20 text-gray-400 hover:text-emerald-400 rounded border border-dark-500 hover:border-emerald-500/50 transition-colors hidden">
+              Retry
+            </button>
+          </div>
+
+          <div class="w-20 h-0.5 bg-dark-600" id="line2"></div>
+
+          <!-- Step 3: Airdrop -->
+          <div id="step3" class="flex-1 text-center">
+            <div id="step3Icon"
+              class="w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2">
+              <span class="text-gray-500 text-lg">💸</span>
+            </div>
+            <p class="text-xs text-gray-400 font-medium mb-1">Airdrop</p>
+            <p id="step3Status" class="text-xs text-gray-600">—</p>
+            <p id="step3Info" class="text-xs text-gray-500 mt-1">—</p>
+            <button id="step3Btn" onclick="retryStep('airdrop')"
+              class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-yellow-500/20 text-gray-400 hover:text-yellow-400 rounded border border-dark-500 hover:border-yellow-500/50 transition-colors hidden">
+              Retry
+            </button>
+          </div>
         </div>
-        <p class="text-xs text-gray-400 font-medium mb-1">Airdrop</p>
-        <p id="step3Status" class="text-xs text-gray-600">—</p>
-        <p id="step3Info" class="text-xs text-gray-500 mt-1">—</p>
-        <button id="step3Btn" onclick="retryStep('airdrop')"
-                class="mt-2 px-3 py-1 text-xs bg-dark-600 hover:bg-yellow-500/20 text-gray-400 hover:text-yellow-400 rounded border border-dark-500 hover:border-yellow-500/50 transition-colors hidden">
-          Retry
-        </button>
+
+        <!-- Snapshot Comparison Info -->
+        <div id="snapshotComparison" class="bg-dark-800/50 rounded-lg p-3 mb-4 hidden">
+          <!-- Normal comparison view -->
+          <div id="comparisonContent">
+            <p class="text-xs text-gray-500 mb-2">MIN Balance Comparison (used for this cycle):</p>
+            <div class="grid grid-cols-3 gap-2 text-center text-xs">
+              <div>
+                <p class="text-gray-500">Previous Snapshot</p>
+                <p id="prevSnapshotId" class="text-cyan-400 font-mono">—</p>
+                <p id="prevSnapshotHolders" class="text-gray-400">—</p>
+              </div>
+              <div class="flex items-center justify-center">
+                <span class="text-gray-600">→ MIN() →</span>
+              </div>
+              <div>
+                <p class="text-gray-500">Current Snapshot</p>
+                <p id="currSnapshotId" class="text-cyan-400 font-mono">—</p>
+                <p id="currSnapshotHolders" class="text-gray-400">—</p>
+              </div>
+            </div>
+          </div>
+          <!-- Baseline view -->
+          <div id="baselineContent" class="hidden text-center py-2">
+            <p class="text-xs text-yellow-400 mb-1">📋 Baseline Snapshot</p>
+            <p class="text-xs text-gray-500">This was the first snapshot. No comparison possible.</p>
+            <p class="text-xs text-gray-600 mt-1">Used as "previous" for the next cycle.</p>
+          </div>
+        </div>
+
+        <!-- Manual Trigger Buttons -->
+        <div class="border-t border-dark-600 pt-4">
+          <div class="flex flex-wrap gap-3 items-center justify-between">
+            <span class="text-xs text-gray-500">Manual Triggers:</span>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="triggerStep('snapshot')" id="btnTriggerSnapshot"
+                class="px-3 py-1.5 bg-dark-600 hover:bg-cyan-500/20 text-gray-300 hover:text-cyan-400 text-xs rounded border border-dark-500 hover:border-cyan-500/50 transition-colors">
+                📸 Take Snapshot
+              </button>
+              <button onclick="triggerStep('calculate')" id="btnTriggerCalc"
+                class="px-3 py-1.5 bg-dark-600 hover:bg-emerald-500/20 text-gray-300 hover:text-emerald-400 text-xs rounded border border-dark-500 hover:border-emerald-500/50 transition-colors">
+                🧮 Calculate
+              </button>
+              <button onclick="triggerStep('airdrop')" id="btnTriggerAirdrop"
+                class="px-3 py-1.5 bg-dark-600 hover:bg-yellow-500/20 text-gray-300 hover:text-yellow-400 text-xs rounded border border-dark-500 hover:border-yellow-500/50 transition-colors">
+                💸 Airdrop
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <% if (isForkMode) { %>
+          <!-- Dev Tools -->
+          <div class="border-t border-dark-600 pt-4 mt-4">
+            <div class="flex flex-wrap gap-3 items-center justify-between">
+              <span class="text-xs text-gray-500 uppercase">Dev Tools:</span>
+              <div class="flex flex-wrap gap-2">
+                <button onclick="clearWeekData()" id="btnClearWeek"
+                  class="px-3 py-1.5 bg-dark-600 hover:bg-red-500/20 text-gray-400 hover:text-red-400 text-xs rounded border border-dark-500 hover:border-red-500/50 transition-colors">
+                  Clear Week Data
+                </button>
+                <button onclick="deleteDatabase()" id="btnDeleteDb"
+                  class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded border border-red-500 transition-colors">
+                  Delete Database
+                </button>
+              </div>
+            </div>
+          </div>
+          <% } %>
       </div>
     </div>
 
-    <!-- Snapshot Comparison Info -->
-    <div id="snapshotComparison" class="bg-dark-800/50 rounded-lg p-3 mb-4 hidden">
-      <!-- Normal comparison view -->
-      <div id="comparisonContent">
-        <p class="text-xs text-gray-500 mb-2">MIN Balance Comparison (used for this cycle):</p>
-        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+    <!-- Job Terminal -->
+    <div id="jobTerminal" class="bg-dark-700 border border-dark-500 rounded-xl mb-8 hidden">
+      <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <div id="jobStatusIndicator" class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
           <div>
-            <p class="text-gray-500">Previous Snapshot</p>
-            <p id="prevSnapshotId" class="text-cyan-400 font-mono">—</p>
-            <p id="prevSnapshotHolders" class="text-gray-400">—</p>
-          </div>
-          <div class="flex items-center justify-center">
-            <span class="text-gray-600">→ MIN() →</span>
-          </div>
-          <div>
-            <p class="text-gray-500">Current Snapshot</p>
-            <p id="currSnapshotId" class="text-cyan-400 font-mono">—</p>
-            <p id="currSnapshotHolders" class="text-gray-400">—</p>
+            <h2 class="text-base font-medium text-white">Job Progress</h2>
+            <p id="jobTitle" class="text-gray-500 text-xs mt-0.5">Running job...</p>
           </div>
         </div>
+        <div class="flex items-center gap-4">
+          <div class="text-right">
+            <p id="jobProgress" class="font-mono text-sm text-cyan-400">0%</p>
+          </div>
+          <button onclick="closeTerminal()" class="text-gray-500 hover:text-white transition-colors">✕</button>
+        </div>
       </div>
-      <!-- Baseline view -->
-      <div id="baselineContent" class="hidden text-center py-2">
-        <p class="text-xs text-yellow-400 mb-1">📋 Baseline Snapshot</p>
-        <p class="text-xs text-gray-500">This was the first snapshot. No comparison possible.</p>
-        <p class="text-xs text-gray-600 mt-1">Used as "previous" for the next cycle.</p>
+      <div class="px-5 py-3 bg-dark-800/50">
+        <div class="w-full bg-dark-600 rounded-full h-2">
+          <div id="jobProgressBar"
+            class="bg-gradient-to-r from-cyan-500 to-emerald-500 h-2 rounded-full transition-all duration-300"
+            style="width: 0%"></div>
+        </div>
+      </div>
+      <div id="terminalOutput" class="bg-dark-900 font-mono text-xs overflow-auto max-h-60 p-4 space-y-1">
+        <div class="text-gray-500">Waiting for job logs...</div>
       </div>
     </div>
 
-    <!-- Manual Trigger Buttons -->
-    <div class="border-t border-dark-600 pt-4">
-      <div class="flex flex-wrap gap-3 items-center justify-between">
-        <span class="text-xs text-gray-500">Manual Triggers:</span>
-        <div class="flex flex-wrap gap-2">
-          <button onclick="triggerStep('snapshot')" id="btnTriggerSnapshot"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-cyan-500/20 text-gray-300 hover:text-cyan-400 text-xs rounded border border-dark-500 hover:border-cyan-500/50 transition-colors">
-            📸 Take Snapshot
-          </button>
-          <button onclick="triggerStep('calculate')" id="btnTriggerCalc"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-emerald-500/20 text-gray-300 hover:text-emerald-400 text-xs rounded border border-dark-500 hover:border-emerald-500/50 transition-colors">
-            🧮 Calculate
-          </button>
-          <button onclick="triggerStep('airdrop')" id="btnTriggerAirdrop"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-yellow-500/20 text-gray-300 hover:text-yellow-400 text-xs rounded border border-dark-500 hover:border-yellow-500/50 transition-colors">
-            💸 Airdrop
-          </button>
+    <!-- Recent Jobs -->
+    <div class="bg-dark-700 border border-dark-500 rounded-xl mb-8">
+      <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
+        <div>
+          <h2 class="text-base font-medium text-white">Job History</h2>
+          <p class="text-gray-500 text-xs mt-0.5">Persistent job logs stored in database</p>
         </div>
-      </div>
-    </div>
-
-    <% if (isForkMode) { %>
-    <!-- Dev Tools -->
-    <div class="border-t border-dark-600 pt-4 mt-4">
-      <div class="flex flex-wrap gap-3 items-center justify-between">
-        <span class="text-xs text-gray-500 uppercase">Dev Tools:</span>
-        <div class="flex flex-wrap gap-2">
-          <button onclick="clearWeekData()" id="btnClearWeek"
-            class="px-3 py-1.5 bg-dark-600 hover:bg-red-500/20 text-gray-400 hover:text-red-400 text-xs rounded border border-dark-500 hover:border-red-500/50 transition-colors">
-            Clear Week Data
+        <div class="flex items-center gap-3">
+          <button onclick="clearJobHistory()" class="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+            <span>🗑</span> Clear History
           </button>
-          <button onclick="deleteDatabase()" id="btnDeleteDb"
-            class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded border border-red-500 transition-colors">
-            Delete Database
+          <button onclick="refreshJobs()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+            <span>↻</span> Refresh
           </button>
         </div>
       </div>
-    </div>
-    <% } %>
-  </div>
-</div>
-
-<!-- Job Terminal -->
-<div id="jobTerminal" class="bg-dark-700 border border-dark-500 rounded-xl mb-8 hidden">
-  <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
-    <div class="flex items-center gap-3">
-      <div id="jobStatusIndicator" class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-      <div>
-        <h2 class="text-base font-medium text-white">Job Progress</h2>
-        <p id="jobTitle" class="text-gray-500 text-xs mt-0.5">Running job...</p>
+      <div id="recentJobsList" class="divide-y divide-dark-600 max-h-96 overflow-y-auto">
+        <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading...</div>
       </div>
     </div>
-    <div class="flex items-center gap-4">
-      <div class="text-right">
-        <p id="jobProgress" class="font-mono text-sm text-cyan-400">0%</p>
+
+    <!-- Recent Distributions -->
+    <div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-dark-500">
+        <h2 class="text-base font-medium text-white">Recent Distributions</h2>
       </div>
-      <button onclick="closeTerminal()" class="text-gray-500 hover:text-white transition-colors">✕</button>
-    </div>
-  </div>
-  <div class="px-5 py-3 bg-dark-800/50">
-    <div class="w-full bg-dark-600 rounded-full h-2">
-      <div id="jobProgressBar" class="bg-gradient-to-r from-cyan-500 to-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
-    </div>
-  </div>
-  <div id="terminalOutput" class="bg-dark-900 font-mono text-xs overflow-auto max-h-60 p-4 space-y-1">
-    <div class="text-gray-500">Waiting for job logs...</div>
-  </div>
-</div>
-
-<!-- Recent Jobs -->
-<div class="bg-dark-700 border border-dark-500 rounded-xl mb-8">
-  <div class="px-5 py-4 border-b border-dark-500 flex justify-between items-center">
-    <div>
-      <h2 class="text-base font-medium text-white">Job History</h2>
-      <p class="text-gray-500 text-xs mt-0.5">Persistent job logs stored in database</p>
-    </div>
-    <button onclick="refreshJobs()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
-      <span>↻</span> Refresh
-    </button>
-  </div>
-  <div id="recentJobsList" class="divide-y divide-dark-600 max-h-96 overflow-y-auto">
-    <div class="px-5 py-8 text-center text-gray-500 text-sm">Loading...</div>
-  </div>
-</div>
-
-<!-- Recent Distributions -->
-<div class="bg-dark-700 border border-dark-500 rounded-xl overflow-hidden">
-  <div class="px-5 py-4 border-b border-dark-500">
-    <h2 class="text-base font-medium text-white">Recent Distributions</h2>
-  </div>
-  <div class="overflow-x-auto">
-    <table class="w-full">
-      <thead>
-        <tr class="bg-dark-800/50">
-          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
-          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Eligible</th>
-          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-          <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-dark-600">
-        <% recentDistributions.forEach(d => { %>
-        <tr class="hover:bg-dark-600/30 transition-colors">
-          <td class="px-5 py-3 font-mono text-sm text-white"><%= d.weekId %></td>
-          <td class="px-5 py-3">
-            <span class="px-2 py-0.5 text-xs rounded-full
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="bg-dark-800/50">
+              <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+              <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Eligible</th>
+              <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+              <th class="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-dark-600">
+            <% recentDistributions.forEach(d=> { %>
+              <tr class="hover:bg-dark-600/30 transition-colors">
+                <td class="px-5 py-3 font-mono text-sm text-white">
+                  <%= d.weekId %>
+                </td>
+                <td class="px-5 py-3">
+                  <span class="px-2 py-0.5 text-xs rounded-full
               <%= d.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
                  d.status === 'failed' ? 'bg-red-500/20 text-red-400' :
                  d.status === 'ready' ? 'bg-cyan-500/20 text-cyan-400' :
                  'bg-yellow-500/20 text-yellow-400' %>">
-              <%= d.status %>
-            </span>
-          </td>
-          <td class="px-5 py-3 text-sm text-gray-300"><%= d.stats?.eligibleHolders || 0 %></td>
-          <td class="px-5 py-3 text-sm text-gray-500"><%= new Date(d.createdAt).toLocaleDateString() %></td>
-          <td class="px-5 py-3">
-            <a href="/admin/distributions/<%= d._id %>" class="text-sm text-cyan-400 hover:text-cyan-300">View →</a>
-          </td>
-        </tr>
-        <% }) %>
-        <% if (recentDistributions.length === 0) { %>
-        <tr>
-          <td colspan="5" class="px-5 py-8 text-center text-gray-500 text-sm">No distributions yet</td>
-        </tr>
-        <% } %>
-      </tbody>
-    </table>
-  </div>
-</div>
+                    <%= d.status %>
+                  </span>
+                </td>
+                <td class="px-5 py-3 text-sm text-gray-300">
+                  <%= d.stats?.eligibleHolders || 0 %>
+                </td>
+                <td class="px-5 py-3 text-sm text-gray-500">
+                  <%= new Date(d.createdAt).toLocaleDateString() %>
+                </td>
+                <td class="px-5 py-3">
+                  <a href="/admin/distributions/<%= d._id %>" class="text-sm text-cyan-400 hover:text-cyan-300">View
+                    →</a>
+                </td>
+              </tr>
+              <% }) %>
+                <% if (recentDistributions.length===0) { %>
+                  <tr>
+                    <td colspan="5" class="px-5 py-8 text-center text-gray-500 text-sm">No distributions yet</td>
+                  </tr>
+                  <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
 
-<script>
-// ═══════════════════════════════════════════════════════════
-// Config from server
-// ═══════════════════════════════════════════════════════════
-const CYCLE_MODE = '<%= cycleMode || "weekly" %>';
+    <script>
+      // ═══════════════════════════════════════════════════════════
+      // Config from server
+      // ═══════════════════════════════════════════════════════════
+      const CYCLE_MODE = '<%= cycleMode || "weekly" %>';
 
-// ═══════════════════════════════════════════════════════════
-// Utilities
-// ═══════════════════════════════════════════════════════════
+      // ═══════════════════════════════════════════════════════════
+      // Utilities
+      // ═══════════════════════════════════════════════════════════
 
-function getDayOfYear(date) {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date - start;
-  const oneDay = 1000 * 60 * 60 * 24;
-  return Math.floor(diff / oneDay);
-}
-
-function get6HourPeriod(date) {
-  return Math.floor(date.getUTCHours() / 6);
-}
-
-function getCurrentWeekId() {
-  const now = new Date();
-
-  // 6-hour mode: YYYY-DXXX-PX
-  if (CYCLE_MODE === '6hour') {
-    const day = getDayOfYear(now);
-    const period = get6HourPeriod(now);
-    return `${now.getFullYear()}-D${day.toString().padStart(3, '0')}-P${period}`;
-  }
-
-  // Daily mode: YYYY-DXXX
-  if (CYCLE_MODE === 'daily') {
-    const day = getDayOfYear(now);
-    return `${now.getFullYear()}-D${day.toString().padStart(3, '0')}`;
-  }
-
-  // Weekly mode: YYYY-WXX
-  const start = new Date(now.getFullYear(), 0, 1);
-  const days = Math.floor((now - start) / 86400000);
-  const week = Math.ceil((days + start.getDay() + 1) / 7);
-  return `${now.getFullYear()}-W${week.toString().padStart(2, '0')}`;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function copyAddress(address) {
-  navigator.clipboard.writeText(address).then(() => alert('Address copied!'));
-}
-
-// ═══════════════════════════════════════════════════════════
-// Week Status & Retry
-// ═══════════════════════════════════════════════════════════
-
-let selectedWeekId = getCurrentWeekId();
-
-async function initWeekSelector() {
-  const select = document.getElementById('weekSelector');
-  const currentWeek = getCurrentWeekId();
-
-  try {
-    // Fetch actual weeks from database
-    const res = await fetch('/admin/weeks/list');
-    const data = await res.json();
-
-    if (data.success && data.weeks && data.weeks.length > 0) {
-      // Use actual weeks from database
-      select.innerHTML = data.weeks.map((w, i) =>
-        `<option value="${w}" ${i === 0 ? 'selected' : ''}>${w}</option>`
-      ).join('');
-      selectedWeekId = data.weeks[0];
-    } else {
-      // Fallback: generate cycle IDs based on current mode
-      const weeks = [];
-      if (CYCLE_MODE === '6hour') {
-        // Generate last 8 periods (2 days worth)
-        for (let i = 0; i < 8; i++) {
-          const d = new Date();
-          d.setHours(d.getHours() - (i * 6));
-          const day = getDayOfYear(d);
-          const period = Math.floor(d.getUTCHours() / 6);
-          weeks.push(`${d.getFullYear()}-D${day.toString().padStart(3, '0')}-P${period}`);
-        }
-      } else if (CYCLE_MODE === 'daily') {
-        // Generate last 5 days
-        for (let i = 0; i < 5; i++) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const day = getDayOfYear(d);
-          weeks.push(`${d.getFullYear()}-D${day.toString().padStart(3, '0')}`);
-        }
-      } else {
-        // Weekly mode: generate last 5 weeks
-        for (let i = 0; i < 5; i++) {
-          const d = new Date();
-          d.setDate(d.getDate() - (i * 7));
-          const start = new Date(d.getFullYear(), 0, 1);
-          const days = Math.floor((d - start) / 86400000);
-          const week = Math.ceil((days + start.getDay() + 1) / 7);
-          weeks.push(`${d.getFullYear()}-W${week.toString().padStart(2, '0')}`);
-        }
+      function getDayOfYear(date) {
+        const start = new Date(date.getFullYear(), 0, 0);
+        const diff = date - start;
+        const oneDay = 1000 * 60 * 60 * 24;
+        return Math.floor(diff / oneDay);
       }
-      const uniqueWeeks = [...new Set(weeks)].sort().reverse();
-      select.innerHTML = uniqueWeeks.map(w =>
-        `<option value="${w}" ${w === currentWeek ? 'selected' : ''}>${w}</option>`
-      ).join('');
-    }
-  } catch (e) {
-    console.error('Failed to load weeks:', e);
-  }
 
-  document.getElementById('currentWeekDisplay').textContent = currentWeek;
-  loadWeekStatus();
-}
+      function get6HourPeriod(date) {
+        return Math.floor(date.getUTCHours() / 6);
+      }
 
-async function loadWeekStatus() {
-  selectedWeekId = document.getElementById('weekSelector').value;
+      function getCurrentWeekId() {
+        const now = new Date();
 
-  try {
-    const res = await fetch(`/admin/week/${selectedWeekId}/status`);
-    const data = await res.json();
+        // 6-hour mode: YYYY-DXXX-PX
+        if (CYCLE_MODE === '6hour') {
+          const day = getDayOfYear(now);
+          const period = get6HourPeriod(now);
+          return `${now.getFullYear()}-D${day.toString().padStart(3, '0')}-P${period}`;
+        }
 
-    if (data.success) {
-      updateStepUI(data.status);
-    }
-  } catch (e) {
-    console.error('Failed to load week status:', e);
-  }
-}
+        // Daily mode: YYYY-DXXX
+        if (CYCLE_MODE === 'daily') {
+          const day = getDayOfYear(now);
+          return `${now.getFullYear()}-D${day.toString().padStart(3, '0')}`;
+        }
 
-function updateStepUI(status) {
-  // Update cycle info banner
-  updateCycleInfo(status);
+        // Weekly mode: YYYY-WXX
+        const start = new Date(now.getFullYear(), 0, 1);
+        const days = Math.floor((now - start) / 86400000);
+        const week = Math.ceil((days + start.getDay() + 1) / 7);
+        return `${now.getFullYear()}-W${week.toString().padStart(2, '0')}`;
+      }
 
-  // Step 1: Snapshot (current cycle)
-  updateStep(1, status.snapshot, status.snapshot?.holders ? `${status.snapshot.holders.toLocaleString()} holders` : null);
-
-  // Step 2: Calculate
-  updateStep(2, status.calculate, status.calculate?.eligible ? `${status.calculate.eligible.toLocaleString()} eligible` : null);
-
-  // Step 3: Airdrop
-  updateStep(3, status.airdrop, status.airdrop?.batches ? `${status.airdrop.batches} batches` : null);
-
-  // Update connecting lines
-  updateLine(1, status.snapshot?.status === 'completed');
-  updateLine(2, status.calculate?.status === 'completed');
-
-  // Update snapshot comparison section
-  updateSnapshotComparison(status);
-}
-
-function updateCycleInfo(status) {
-  const banner = document.getElementById('cycleInfoBanner');
-  const icon = document.getElementById('cycleInfoIcon');
-  const title = document.getElementById('cycleInfoTitle');
-  const desc = document.getElementById('cycleInfoDesc');
-
-  // Check if this specific week was a baseline (first snapshot with no distribution)
-  const hasSnapshot = status.snapshot?.status === 'completed';
-  const hasCalculation = status.calculate?.status === 'completed';
-  const hasAirdrop = status.airdrop?.status === 'completed';
-  const wasSkipped = status.calculate?.status === 'skipped';
-
-  // Determine cycle type based on this week's data
-  if (!hasSnapshot) {
-    // No snapshot yet for this week
-    banner.className = 'mb-4 p-3 rounded-lg bg-gray-500/10 border border-gray-500/30';
-    icon.textContent = '⏳';
-    title.textContent = 'Pending';
-    title.className = 'text-sm font-medium text-gray-400';
-    desc.textContent = 'Waiting for snapshot to be taken for this cycle.';
-  } else if (wasSkipped || (!hasCalculation && !status.previousSnapshot)) {
-    // This was a baseline cycle (first snapshot, no previous to compare)
-    banner.className = 'mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30';
-    icon.textContent = '📋';
-    title.textContent = 'Baseline Snapshot';
-    title.className = 'text-sm font-medium text-yellow-400';
-    desc.textContent = 'First snapshot taken as baseline. No airdrop for this cycle (nothing to compare yet).';
-  } else if (hasAirdrop) {
-    // Fully completed cycle
-    banner.className = 'mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30';
-    icon.textContent = '✅';
-    title.textContent = 'Cycle Complete';
-    title.className = 'text-sm font-medium text-emerald-400';
-    const eligible = status.calculate?.eligible || 0;
-    desc.textContent = `Airdrop completed! ${eligible.toLocaleString()} holders received rewards.`;
-  } else if (hasCalculation) {
-    // Calculated but not yet airdropped
-    banner.className = 'mb-4 p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30';
-    icon.textContent = '🎯';
-    title.textContent = 'Ready for Airdrop';
-    title.className = 'text-sm font-medium text-cyan-400';
-    const eligible = status.calculate?.eligible || 0;
-    desc.textContent = `Calculation complete. ${eligible.toLocaleString()} eligible holders waiting for airdrop.`;
-  } else if (hasSnapshot && status.previousSnapshot) {
-    // Has snapshot and previous exists - ready to calculate
-    banner.className = 'mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30';
-    icon.textContent = '📊';
-    title.textContent = 'Ready to Calculate';
-    title.className = 'text-sm font-medium text-blue-400';
-    desc.textContent = 'Snapshot taken. Ready to compare with previous and calculate rewards.';
-  } else {
-    // Fallback
-    banner.className = 'mb-4 p-3 rounded-lg bg-gray-500/10 border border-gray-500/30';
-    icon.textContent = '❓';
-    title.textContent = 'Unknown State';
-    title.className = 'text-sm font-medium text-gray-400';
-    desc.textContent = 'Check job logs for details.';
-  }
-}
-
-function updateSnapshotComparison(status) {
-  const section = document.getElementById('snapshotComparison');
-  const comparisonContent = document.getElementById('comparisonContent');
-  const baselineContent = document.getElementById('baselineContent');
-
-  // Only show comparison if this cycle has a distribution (meaning it compared snapshots)
-  const hasDistribution = status.calculate?.status === 'completed';
-  const isBaseline = status.calculate?.status === 'skipped';
-
-  if (hasDistribution && status.previousSnapshot && status.currentSnapshot) {
-    // Show comparison for cycles that actually compared snapshots
-    section.classList.remove('hidden');
-    comparisonContent.classList.remove('hidden');
-    baselineContent.classList.add('hidden');
-    document.getElementById('prevSnapshotId').textContent = status.previousSnapshot.weekId || '—';
-    document.getElementById('prevSnapshotHolders').textContent = status.previousSnapshot.holders
-      ? `${status.previousSnapshot.holders.toLocaleString()} holders`
-      : '—';
-    document.getElementById('currSnapshotId').textContent = status.currentSnapshot.weekId || '—';
-    document.getElementById('currSnapshotHolders').textContent = status.currentSnapshot.holders
-      ? `${status.currentSnapshot.holders.toLocaleString()} holders`
-      : '—';
-  } else if (isBaseline && status.snapshot?.status === 'completed') {
-    // Show baseline message
-    section.classList.remove('hidden');
-    comparisonContent.classList.add('hidden');
-    baselineContent.classList.remove('hidden');
-  } else {
-    section.classList.add('hidden');
-  }
-}
-
-function updateStep(num, stepStatus, infoText) {
-  const icon = document.getElementById(`step${num}Icon`);
-  const statusEl = document.getElementById(`step${num}Status`);
-  const infoEl = document.getElementById(`step${num}Info`);
-  const btn = document.getElementById(`step${num}Btn`);
-
-  const icons = ['📸', '🧮', '💸'];
-  const stepIcon = icons[num - 1] || num;
-
-  if (!stepStatus || stepStatus.status === 'pending') {
-    icon.innerHTML = `<span class="text-gray-500 text-lg">${stepIcon}</span>`;
-    icon.className = 'w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2';
-    statusEl.textContent = 'Pending';
-    statusEl.className = 'text-xs text-gray-600';
-    if (infoEl) infoEl.textContent = '—';
-    btn.classList.add('hidden');
-  } else if (stepStatus.status === 'completed') {
-    icon.innerHTML = '✓';
-    icon.className = 'w-14 h-14 mx-auto rounded-full bg-emerald-500/20 text-emerald-400 text-xl flex items-center justify-center mb-2';
-    statusEl.textContent = new Date(stepStatus.completedAt).toLocaleTimeString();
-    statusEl.className = 'text-xs text-emerald-400';
-    if (infoEl) {
-      infoEl.textContent = infoText || '—';
-      infoEl.className = 'text-xs text-emerald-400/70 mt-1';
-    }
-    btn.classList.add('hidden');
-  } else if (stepStatus.status === 'failed') {
-    icon.innerHTML = '✗';
-    icon.className = 'w-14 h-14 mx-auto rounded-full bg-red-500/20 text-red-400 text-xl flex items-center justify-center mb-2';
-    statusEl.textContent = 'Failed';
-    statusEl.className = 'text-xs text-red-400';
-    if (infoEl) {
-      infoEl.textContent = stepStatus.error ? stepStatus.error.slice(0, 30) + '...' : '—';
-      infoEl.className = 'text-xs text-red-400/70 mt-1';
-    }
-    btn.classList.remove('hidden');
-  } else if (stepStatus.status === 'running') {
-    icon.innerHTML = '<div class="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>';
-    icon.className = 'w-14 h-14 mx-auto rounded-full bg-cyan-500/20 flex items-center justify-center mb-2';
-    statusEl.textContent = 'Running...';
-    statusEl.className = 'text-xs text-cyan-400 animate-pulse';
-    if (infoEl) {
-      infoEl.textContent = stepStatus.progress || '—';
-      infoEl.className = 'text-xs text-cyan-400/70 mt-1';
-    }
-    btn.classList.add('hidden');
-  } else if (stepStatus.status === 'skipped') {
-    icon.innerHTML = '⏭';
-    icon.className = 'w-14 h-14 mx-auto rounded-full bg-gray-500/20 text-gray-400 text-xl flex items-center justify-center mb-2';
-    statusEl.textContent = 'Skipped';
-    statusEl.className = 'text-xs text-gray-500';
-    if (infoEl) {
-      infoEl.textContent = stepStatus.reason || 'Need more snapshots';
-      infoEl.className = 'text-xs text-gray-500 mt-1';
-    }
-    btn.classList.add('hidden');
-  }
-}
-
-function updateLine(num, completed) {
-  const line = document.getElementById(`line${num}`);
-  if (line) {
-    line.className = completed
-      ? 'w-16 h-0.5 bg-emerald-500/50'
-      : 'w-16 h-0.5 bg-dark-600';
-  }
-}
-
-async function retryStep(step) {
-  if (!confirm(`Retry ${step} for week ${selectedWeekId}?`)) return;
-
-  try {
-    const res = await fetch(`/admin/week/${selectedWeekId}/retry/${step}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const data = await res.json();
-
-    if (data.success && data.job) {
-      showTerminal(data.job.id || data.job._id, `${step} - ${selectedWeekId}`);
-    } else {
-      alert(data.error || 'Retry failed');
-    }
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
-}
-
-async function triggerStep(step) {
-  const weekId = selectedWeekId;
-
-  try {
-    const res = await fetch(`/admin/week/${weekId}/trigger/${step}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const data = await res.json();
-
-    if (data.success && data.job) {
-      showTerminal(data.job.id || data.job._id, `${step} - ${weekId}`);
-    } else {
-      alert(data.error || 'Trigger failed');
-    }
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// Terminal
-// ═══════════════════════════════════════════════════════════
-
-let currentJobId = null;
-let jobPollInterval = null;
-let lastLogCount = 0;
-
-function showTerminal(jobId, title) {
-  currentJobId = jobId;
-  lastLogCount = 0;
-
-  document.getElementById('jobTerminal').classList.remove('hidden');
-  document.getElementById('jobTitle').textContent = title;
-  document.getElementById('terminalOutput').innerHTML = '<div class="text-cyan-400">● Loading...</div>';
-  document.getElementById('jobProgress').textContent = '0%';
-  document.getElementById('jobProgressBar').style.width = '0%';
-
-  if (jobPollInterval) clearInterval(jobPollInterval);
-  jobPollInterval = setInterval(pollJobStatus, 1000);
-  pollJobStatus();
-}
-
-function closeTerminal() {
-  document.getElementById('jobTerminal').classList.add('hidden');
-  if (jobPollInterval) clearInterval(jobPollInterval);
-  currentJobId = null;
-}
-
-async function pollJobStatus() {
-  if (!currentJobId) return;
-
-  try {
-    const res = await fetch(`/admin/jobs/${currentJobId}/logs`);
-    const data = await res.json();
-    if (!data.success) return;
-
-    const job = data.job;
-    const logs = data.logs || [];
-
-    // Update progress
-    if (job.progress) {
-      const percent = job.progress.percentage || 0;
-      document.getElementById('jobProgress').textContent = `${percent}%`;
-      document.getElementById('jobProgressBar').style.width = `${percent}%`;
-    }
-
-    // Append new logs
-    if (logs.length > lastLogCount) {
-      const output = document.getElementById('terminalOutput');
-      logs.slice(lastLogCount).forEach(log => {
+      function escapeHtml(text) {
         const div = document.createElement('div');
-        const time = new Date(log.timestamp).toLocaleTimeString();
-        const colorClass = log.level === 'error' ? 'text-red-400' :
-                          log.level === 'warn' ? 'text-yellow-400' :
-                          log.level === 'success' ? 'text-emerald-400' : 'text-gray-300';
-        div.className = colorClass;
+        div.textContent = text;
+        return div.innerHTML;
+      }
 
-        // Format log with data if available (e.g., batch amount)
-        let logText = escapeHtml(log.message);
-        if (log.data && typeof log.data === 'object') {
-          if (log.data.amount) {
-            logText += ` <span class="text-cyan-400">(${escapeHtml(log.data.amount)})</span>`;
+      function copyAddress(address) {
+        navigator.clipboard.writeText(address).then(() => alert('Address copied!'));
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // Week Status & Retry
+      // ═══════════════════════════════════════════════════════════
+
+      let selectedWeekId = getCurrentWeekId();
+
+      async function initWeekSelector() {
+        const select = document.getElementById('weekSelector');
+        const currentWeek = getCurrentWeekId();
+
+        try {
+          // Fetch actual weeks from database
+          const res = await fetch('/admin/weeks/list');
+          const data = await res.json();
+
+          if (data.success && data.weeks && data.weeks.length > 0) {
+            // Use actual weeks from database
+            select.innerHTML = data.weeks.map((w, i) =>
+              `<option value="${w}" ${i === 0 ? 'selected' : ''}>${w}</option>`
+            ).join('');
+            selectedWeekId = data.weeks[0];
+          } else {
+            // Fallback: generate cycle IDs based on current mode
+            const weeks = [];
+            if (CYCLE_MODE === '6hour') {
+              // Generate last 8 periods (2 days worth)
+              for (let i = 0; i < 8; i++) {
+                const d = new Date();
+                d.setHours(d.getHours() - (i * 6));
+                const day = getDayOfYear(d);
+                const period = Math.floor(d.getUTCHours() / 6);
+                weeks.push(`${d.getFullYear()}-D${day.toString().padStart(3, '0')}-P${period}`);
+              }
+            } else if (CYCLE_MODE === 'daily') {
+              // Generate last 5 days
+              for (let i = 0; i < 5; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const day = getDayOfYear(d);
+                weeks.push(`${d.getFullYear()}-D${day.toString().padStart(3, '0')}`);
+              }
+            } else {
+              // Weekly mode: generate last 5 weeks
+              for (let i = 0; i < 5; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() - (i * 7));
+                const start = new Date(d.getFullYear(), 0, 1);
+                const days = Math.floor((d - start) / 86400000);
+                const week = Math.ceil((days + start.getDay() + 1) / 7);
+                weeks.push(`${d.getFullYear()}-W${week.toString().padStart(2, '0')}`);
+              }
+            }
+            const uniqueWeeks = [...new Set(weeks)].sort().reverse();
+            select.innerHTML = uniqueWeeks.map(w =>
+              `<option value="${w}" ${w === currentWeek ? 'selected' : ''}>${w}</option>`
+            ).join('');
           }
-          if (log.data.txHash) {
-            const shortTx = log.data.txHash.slice(0, 10) + '...' + log.data.txHash.slice(-6);
-            logText += ` <span class="text-gray-500">[${shortTx}]</span>`;
-          }
+        } catch (e) {
+          console.error('Failed to load weeks:', e);
         }
 
-        div.innerHTML = `<span class="text-gray-600">[${time}]</span> ${logText}`;
-        output.appendChild(div);
-      });
-      output.scrollTop = output.scrollHeight;
-      lastLogCount = logs.length;
-    }
-
-    // Check completion
-    if (job.status === 'completed' || job.status === 'failed') {
-      const indicator = document.getElementById('jobStatusIndicator');
-      indicator.className = job.status === 'completed'
-        ? 'w-2 h-2 bg-emerald-400 rounded-full'
-        : 'w-2 h-2 bg-red-400 rounded-full';
-
-      if (jobPollInterval) clearInterval(jobPollInterval);
-
-      setTimeout(() => {
+        document.getElementById('currentWeekDisplay').textContent = currentWeek;
         loadWeekStatus();
-        refreshJobs();
-      }, 2000);
-    }
-  } catch (e) {
-    console.error('Poll error:', e);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-// Jobs List
-// ═══════════════════════════════════════════════════════════
-
-async function refreshJobs() {
-  try {
-    const res = await fetch('/admin/jobs/status');
-    const data = await res.json();
-    if (!data.success) return;
-
-    const jobs = [...(data.activeJobs || []), ...(data.recentJobs || [])];
-    const container = document.getElementById('recentJobsList');
-
-    if (jobs.length === 0) {
-      container.innerHTML = '<div class="px-5 py-8 text-center text-gray-500 text-sm">No jobs yet. Trigger a step above to create one.</div>';
-      return;
-    }
-
-    // Remove duplicates by ID
-    const uniqueJobs = [];
-    const seenIds = new Set();
-    for (const job of jobs) {
-      const id = job.id || job._id || job.jobId;
-      if (!seenIds.has(id)) {
-        seenIds.add(id);
-        uniqueJobs.push(job);
       }
-    }
 
-    container.innerHTML = uniqueJobs.slice(0, 15).map(job => {
-      const statusColors = {
-        pending: 'bg-gray-500/20 text-gray-400',
-        queued: 'bg-gray-500/20 text-gray-400',
-        running: 'bg-cyan-500/20 text-cyan-400',
-        completed: 'bg-emerald-500/20 text-emerald-400',
-        failed: 'bg-red-500/20 text-red-400'
-      };
+      async function loadWeekStatus() {
+        selectedWeekId = document.getElementById('weekSelector').value;
 
-      const jobId = job.id || job._id || job.jobId;
-      const timestamp = job.createdAt ? new Date(job.createdAt).toLocaleString() : '';
-      const duration = job.completedAt && job.startedAt
-        ? formatDuration(new Date(job.completedAt) - new Date(job.startedAt))
-        : '';
+        try {
+          const res = await fetch(`/admin/week/${selectedWeekId}/status`);
+          const data = await res.json();
 
-      return `
+          if (data.success) {
+            updateStepUI(data.status);
+          }
+        } catch (e) {
+          console.error('Failed to load week status:', e);
+        }
+      }
+
+      function updateStepUI(status) {
+        // Update cycle info banner
+        updateCycleInfo(status);
+
+        // Step 1: Snapshot (current cycle)
+        updateStep(1, status.snapshot, status.snapshot?.holders ? `${status.snapshot.holders.toLocaleString()} holders` : null);
+
+        // Step 2: Calculate
+        updateStep(2, status.calculate, status.calculate?.eligible ? `${status.calculate.eligible.toLocaleString()} eligible` : null);
+
+        // Step 3: Airdrop
+        updateStep(3, status.airdrop, status.airdrop?.batches ? `${status.airdrop.batches} batches` : null);
+
+        // Update connecting lines
+        updateLine(1, status.snapshot?.status === 'completed');
+        updateLine(2, status.calculate?.status === 'completed');
+
+        // Update snapshot comparison section
+        updateSnapshotComparison(status);
+      }
+
+      function updateCycleInfo(status) {
+        const banner = document.getElementById('cycleInfoBanner');
+        const icon = document.getElementById('cycleInfoIcon');
+        const title = document.getElementById('cycleInfoTitle');
+        const desc = document.getElementById('cycleInfoDesc');
+
+        // Check if this specific week was a baseline (first snapshot with no distribution)
+        const hasSnapshot = status.snapshot?.status === 'completed';
+        const hasCalculation = status.calculate?.status === 'completed';
+        const hasAirdrop = status.airdrop?.status === 'completed';
+        const wasSkipped = status.calculate?.status === 'skipped';
+
+        // Determine cycle type based on this week's data
+        if (!hasSnapshot) {
+          // No snapshot yet for this week
+          banner.className = 'mb-4 p-3 rounded-lg bg-gray-500/10 border border-gray-500/30';
+          icon.textContent = '⏳';
+          title.textContent = 'Pending';
+          title.className = 'text-sm font-medium text-gray-400';
+          desc.textContent = 'Waiting for snapshot to be taken for this cycle.';
+        } else if (wasSkipped || (!hasCalculation && !status.previousSnapshot)) {
+          // This was a baseline cycle (first snapshot, no previous to compare)
+          banner.className = 'mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30';
+          icon.textContent = '📋';
+          title.textContent = 'Baseline Snapshot';
+          title.className = 'text-sm font-medium text-yellow-400';
+          desc.textContent = 'First snapshot taken as baseline. No airdrop for this cycle (nothing to compare yet).';
+        } else if (hasAirdrop) {
+          // Fully completed cycle
+          banner.className = 'mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30';
+          icon.textContent = '✅';
+          title.textContent = 'Cycle Complete';
+          title.className = 'text-sm font-medium text-emerald-400';
+          const eligible = status.calculate?.eligible || 0;
+          desc.textContent = `Airdrop completed! ${eligible.toLocaleString()} holders received rewards.`;
+        } else if (hasCalculation) {
+          // Calculated but not yet airdropped
+          banner.className = 'mb-4 p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30';
+          icon.textContent = '🎯';
+          title.textContent = 'Ready for Airdrop';
+          title.className = 'text-sm font-medium text-cyan-400';
+          const eligible = status.calculate?.eligible || 0;
+          desc.textContent = `Calculation complete. ${eligible.toLocaleString()} eligible holders waiting for airdrop.`;
+        } else if (hasSnapshot && status.previousSnapshot) {
+          // Has snapshot and previous exists - ready to calculate
+          banner.className = 'mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30';
+          icon.textContent = '📊';
+          title.textContent = 'Ready to Calculate';
+          title.className = 'text-sm font-medium text-blue-400';
+          desc.textContent = 'Snapshot taken. Ready to compare with previous and calculate rewards.';
+        } else {
+          // Fallback
+          banner.className = 'mb-4 p-3 rounded-lg bg-gray-500/10 border border-gray-500/30';
+          icon.textContent = '❓';
+          title.textContent = 'Unknown State';
+          title.className = 'text-sm font-medium text-gray-400';
+          desc.textContent = 'Check job logs for details.';
+        }
+      }
+
+      function updateSnapshotComparison(status) {
+        const section = document.getElementById('snapshotComparison');
+        const comparisonContent = document.getElementById('comparisonContent');
+        const baselineContent = document.getElementById('baselineContent');
+
+        // Only show comparison if this cycle has a distribution (meaning it compared snapshots)
+        const hasDistribution = status.calculate?.status === 'completed';
+        const isBaseline = status.calculate?.status === 'skipped';
+
+        if (hasDistribution && status.previousSnapshot && status.currentSnapshot) {
+          // Show comparison for cycles that actually compared snapshots
+          section.classList.remove('hidden');
+          comparisonContent.classList.remove('hidden');
+          baselineContent.classList.add('hidden');
+          document.getElementById('prevSnapshotId').textContent = status.previousSnapshot.weekId || '—';
+          document.getElementById('prevSnapshotHolders').textContent = status.previousSnapshot.holders
+            ? `${status.previousSnapshot.holders.toLocaleString()} holders`
+            : '—';
+          document.getElementById('currSnapshotId').textContent = status.currentSnapshot.weekId || '—';
+          document.getElementById('currSnapshotHolders').textContent = status.currentSnapshot.holders
+            ? `${status.currentSnapshot.holders.toLocaleString()} holders`
+            : '—';
+        } else if (isBaseline && status.snapshot?.status === 'completed') {
+          // Show baseline message
+          section.classList.remove('hidden');
+          comparisonContent.classList.add('hidden');
+          baselineContent.classList.remove('hidden');
+        } else {
+          section.classList.add('hidden');
+        }
+      }
+
+      function updateStep(num, stepStatus, infoText) {
+        const icon = document.getElementById(`step${num}Icon`);
+        const statusEl = document.getElementById(`step${num}Status`);
+        const infoEl = document.getElementById(`step${num}Info`);
+        const btn = document.getElementById(`step${num}Btn`);
+
+        const icons = ['📸', '🧮', '💸'];
+        const stepIcon = icons[num - 1] || num;
+
+        if (!stepStatus || stepStatus.status === 'pending') {
+          icon.innerHTML = `<span class="text-gray-500 text-lg">${stepIcon}</span>`;
+          icon.className = 'w-14 h-14 mx-auto rounded-full bg-dark-600 flex items-center justify-center mb-2';
+          statusEl.textContent = 'Pending';
+          statusEl.className = 'text-xs text-gray-600';
+          if (infoEl) infoEl.textContent = '—';
+          btn.classList.add('hidden');
+        } else if (stepStatus.status === 'completed') {
+          icon.innerHTML = '✓';
+          icon.className = 'w-14 h-14 mx-auto rounded-full bg-emerald-500/20 text-emerald-400 text-xl flex items-center justify-center mb-2';
+          statusEl.textContent = new Date(stepStatus.completedAt).toLocaleTimeString();
+          statusEl.className = 'text-xs text-emerald-400';
+          if (infoEl) {
+            infoEl.textContent = infoText || '—';
+            infoEl.className = 'text-xs text-emerald-400/70 mt-1';
+          }
+          btn.classList.add('hidden');
+        } else if (stepStatus.status === 'failed') {
+          icon.innerHTML = '✗';
+          icon.className = 'w-14 h-14 mx-auto rounded-full bg-red-500/20 text-red-400 text-xl flex items-center justify-center mb-2';
+          statusEl.textContent = 'Failed';
+          statusEl.className = 'text-xs text-red-400';
+          if (infoEl) {
+            infoEl.textContent = stepStatus.error ? stepStatus.error.slice(0, 30) + '...' : '—';
+            infoEl.className = 'text-xs text-red-400/70 mt-1';
+          }
+          btn.classList.remove('hidden');
+        } else if (stepStatus.status === 'running') {
+          icon.innerHTML = '<div class="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>';
+          icon.className = 'w-14 h-14 mx-auto rounded-full bg-cyan-500/20 flex items-center justify-center mb-2';
+          statusEl.textContent = 'Running...';
+          statusEl.className = 'text-xs text-cyan-400 animate-pulse';
+          if (infoEl) {
+            infoEl.textContent = stepStatus.progress || '—';
+            infoEl.className = 'text-xs text-cyan-400/70 mt-1';
+          }
+          btn.classList.add('hidden');
+        } else if (stepStatus.status === 'skipped') {
+          icon.innerHTML = '⏭';
+          icon.className = 'w-14 h-14 mx-auto rounded-full bg-gray-500/20 text-gray-400 text-xl flex items-center justify-center mb-2';
+          statusEl.textContent = 'Skipped';
+          statusEl.className = 'text-xs text-gray-500';
+          if (infoEl) {
+            infoEl.textContent = stepStatus.reason || 'Need more snapshots';
+            infoEl.className = 'text-xs text-gray-500 mt-1';
+          }
+          btn.classList.add('hidden');
+        }
+      }
+
+      function updateLine(num, completed) {
+        const line = document.getElementById(`line${num}`);
+        if (line) {
+          line.className = completed
+            ? 'w-16 h-0.5 bg-emerald-500/50'
+            : 'w-16 h-0.5 bg-dark-600';
+        }
+      }
+
+      async function retryStep(step) {
+        if (!confirm(`Retry ${step} for week ${selectedWeekId}?`)) return;
+
+        try {
+          const res = await fetch(`/admin/week/${selectedWeekId}/retry/${step}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          const data = await res.json();
+
+          if (data.success && data.job) {
+            showTerminal(data.job.id || data.job._id, `${step} - ${selectedWeekId}`);
+          } else {
+            alert(data.error || 'Retry failed');
+          }
+        } catch (e) {
+          alert('Error: ' + e.message);
+        }
+      }
+
+      async function triggerStep(step) {
+        const weekId = selectedWeekId;
+
+        try {
+          const res = await fetch(`/admin/week/${weekId}/trigger/${step}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          const data = await res.json();
+
+          if (data.success && data.job) {
+            showTerminal(data.job.id || data.job._id, `${step} - ${weekId}`);
+          } else {
+            alert(data.error || 'Trigger failed');
+          }
+        } catch (e) {
+          alert('Error: ' + e.message);
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // Terminal
+      // ═══════════════════════════════════════════════════════════
+
+      let currentJobId = null;
+      let jobPollInterval = null;
+      let lastLogCount = 0;
+
+      function showTerminal(jobId, title) {
+        currentJobId = jobId;
+        lastLogCount = 0;
+
+        document.getElementById('jobTerminal').classList.remove('hidden');
+        document.getElementById('jobTitle').textContent = title;
+        document.getElementById('terminalOutput').innerHTML = '<div class="text-cyan-400">● Loading...</div>';
+        document.getElementById('jobProgress').textContent = '0%';
+        document.getElementById('jobProgressBar').style.width = '0%';
+
+        if (jobPollInterval) clearInterval(jobPollInterval);
+        jobPollInterval = setInterval(pollJobStatus, 1000);
+        pollJobStatus();
+      }
+
+      function closeTerminal() {
+        document.getElementById('jobTerminal').classList.add('hidden');
+        if (jobPollInterval) clearInterval(jobPollInterval);
+        currentJobId = null;
+      }
+
+      async function pollJobStatus() {
+        if (!currentJobId) return;
+
+        try {
+          const res = await fetch(`/admin/jobs/${currentJobId}/logs`);
+          const data = await res.json();
+          if (!data.success) return;
+
+          const job = data.job;
+          const logs = data.logs || [];
+
+          // Update progress
+          if (job.progress) {
+            const percent = job.progress.percentage || 0;
+            document.getElementById('jobProgress').textContent = `${percent}%`;
+            document.getElementById('jobProgressBar').style.width = `${percent}%`;
+          }
+
+          // Append new logs
+          if (logs.length > lastLogCount) {
+            const output = document.getElementById('terminalOutput');
+            logs.slice(lastLogCount).forEach(log => {
+              const div = document.createElement('div');
+              const time = new Date(log.timestamp).toLocaleTimeString();
+              const colorClass = log.level === 'error' ? 'text-red-400' :
+                log.level === 'warn' ? 'text-yellow-400' :
+                  log.level === 'success' ? 'text-emerald-400' : 'text-gray-300';
+              div.className = colorClass;
+
+              // Format log with data if available (e.g., batch amount)
+              let logText = escapeHtml(log.message);
+              if (log.data && typeof log.data === 'object') {
+                if (log.data.amount) {
+                  logText += ` <span class="text-cyan-400">(${escapeHtml(log.data.amount)})</span>`;
+                }
+                if (log.data.txHash) {
+                  const shortTx = log.data.txHash.slice(0, 10) + '...' + log.data.txHash.slice(-6);
+                  logText += ` <span class="text-gray-500">[${shortTx}]</span>`;
+                }
+              }
+
+              div.innerHTML = `<span class="text-gray-600">[${time}]</span> ${logText}`;
+              output.appendChild(div);
+            });
+            output.scrollTop = output.scrollHeight;
+            lastLogCount = logs.length;
+          }
+
+          // Check completion
+          if (job.status === 'completed' || job.status === 'failed') {
+            const indicator = document.getElementById('jobStatusIndicator');
+            indicator.className = job.status === 'completed'
+              ? 'w-2 h-2 bg-emerald-400 rounded-full'
+              : 'w-2 h-2 bg-red-400 rounded-full';
+
+            if (jobPollInterval) clearInterval(jobPollInterval);
+
+            setTimeout(() => {
+              loadWeekStatus();
+              refreshJobs();
+            }, 2000);
+          }
+        } catch (e) {
+          console.error('Poll error:', e);
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // Jobs List
+      // ═══════════════════════════════════════════════════════════
+
+      async function clearJobHistory() {
+        if (!confirm('Clear all completed and failed job records? Running jobs will not be affected.')) return;
+
+        try {
+          const res = await fetch('/admin/jobs/history', { method: 'DELETE' });
+          const data = await res.json();
+
+          if (data.success) {
+            alert(data.message || 'Job history cleared');
+            refreshJobs();
+          } else {
+            alert(data.error || 'Failed to clear history');
+          }
+        } catch (e) {
+          alert('Error: ' + e.message);
+        }
+      }
+
+      async function refreshJobs() {
+        try {
+          const res = await fetch('/admin/jobs/status');
+          const data = await res.json();
+          if (!data.success) return;
+
+          const jobs = [...(data.activeJobs || []), ...(data.recentJobs || [])];
+          const container = document.getElementById('recentJobsList');
+
+          if (jobs.length === 0) {
+            container.innerHTML = '<div class="px-5 py-8 text-center text-gray-500 text-sm">No jobs yet. Trigger a step above to create one.</div>';
+            return;
+          }
+
+          // Remove duplicates by ID
+          const uniqueJobs = [];
+          const seenIds = new Set();
+          for (const job of jobs) {
+            const id = job.id || job._id || job.jobId;
+            if (!seenIds.has(id)) {
+              seenIds.add(id);
+              uniqueJobs.push(job);
+            }
+          }
+
+          container.innerHTML = uniqueJobs.slice(0, 15).map(job => {
+            const statusColors = {
+              pending: 'bg-gray-500/20 text-gray-400',
+              queued: 'bg-gray-500/20 text-gray-400',
+              running: 'bg-cyan-500/20 text-cyan-400',
+              completed: 'bg-emerald-500/20 text-emerald-400',
+              failed: 'bg-red-500/20 text-red-400'
+            };
+
+            const jobId = job.id || job._id || job.jobId;
+            const timestamp = job.createdAt ? new Date(job.createdAt).toLocaleString() : '';
+            const duration = job.completedAt && job.startedAt
+              ? formatDuration(new Date(job.completedAt) - new Date(job.startedAt))
+              : '';
+
+            return `
         <div class="px-5 py-3 hover:bg-dark-600/30 transition-colors">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
@@ -904,91 +972,91 @@ async function refreshJobs() {
           </div>
         </div>
       `;
-    }).join('');
+          }).join('');
 
-    // Auto-show terminal for running jobs
-    const runningJob = uniqueJobs.find(j => j.status === 'running');
-    if (runningJob && !currentJobId) {
-      const jobId = runningJob.id || runningJob._id || runningJob.jobId;
-      showTerminal(jobId, `${runningJob.type} - ${runningJob.weekId}`);
-    }
-  } catch (e) {
-    console.error('Failed to refresh jobs:', e);
-    document.getElementById('recentJobsList').innerHTML = '<div class="px-5 py-8 text-center text-red-400 text-sm">Failed to load jobs</div>';
-  }
-}
+          // Auto-show terminal for running jobs
+          const runningJob = uniqueJobs.find(j => j.status === 'running');
+          if (runningJob && !currentJobId) {
+            const jobId = runningJob.id || runningJob._id || runningJob.jobId;
+            showTerminal(jobId, `${runningJob.type} - ${runningJob.weekId}`);
+          }
+        } catch (e) {
+          console.error('Failed to refresh jobs:', e);
+          document.getElementById('recentJobsList').innerHTML = '<div class="px-5 py-8 text-center text-red-400 text-sm">Failed to load jobs</div>';
+        }
+      }
 
-function formatJobType(type) {
-  const labels = {
-    'snapshot-start': '📸 Start Snapshot',
-    'snapshot-end': '📸 End Snapshot',
-    'snapshot': '📸 Snapshot',
-    'calculate': '🧮 Calculate',
-    'calculation': '🧮 Calculate',
-    'airdrop': '💸 Airdrop',
-    'full-flow': '🔄 Full Flow'
-  };
-  return labels[type] || type;
-}
+      function formatJobType(type) {
+        const labels = {
+          'snapshot-start': '📸 Start Snapshot',
+          'snapshot-end': '📸 End Snapshot',
+          'snapshot': '📸 Snapshot',
+          'calculate': '🧮 Calculate',
+          'calculation': '🧮 Calculate',
+          'airdrop': '💸 Airdrop',
+          'full-flow': '🔄 Full Flow'
+        };
+        return labels[type] || type;
+      }
 
-function formatDuration(ms) {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const mins = Math.floor(ms / 60000);
-  const secs = Math.floor((ms % 60000) / 1000);
-  return `${mins}m ${secs}s`;
-}
+      function formatDuration(ms) {
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+        const mins = Math.floor(ms / 60000);
+        const secs = Math.floor((ms % 60000) / 1000);
+        return `${mins}m ${secs}s`;
+      }
 
-// ═══════════════════════════════════════════════════════════
-// Dev Tools
-// ═══════════════════════════════════════════════════════════
+      // ═══════════════════════════════════════════════════════════
+      // Dev Tools
+      // ═══════════════════════════════════════════════════════════
 
-async function clearWeekData() {
-  if (!confirm(`Clear all data for ${selectedWeekId}?`)) return;
+      async function clearWeekData() {
+        if (!confirm(`Clear all data for ${selectedWeekId}?`)) return;
 
-  try {
-    const res = await fetch('/admin/dev/clear-data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ weekId: selectedWeekId })
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert('Data cleared');
-      location.reload();
-    } else {
-      alert(data.error || 'Failed');
-    }
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
-}
+        try {
+          const res = await fetch('/admin/dev/clear-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ weekId: selectedWeekId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('Data cleared');
+            location.reload();
+          } else {
+            alert(data.error || 'Failed');
+          }
+        } catch (e) {
+          alert('Error: ' + e.message);
+        }
+      }
 
-async function deleteDatabase() {
-  if (!confirm('DELETE ENTIRE DATABASE?')) return;
-  if (prompt('Type DELETE to confirm:') !== 'DELETE') return;
+      async function deleteDatabase() {
+        if (!confirm('DELETE ENTIRE DATABASE?')) return;
+        if (prompt('Type DELETE to confirm:') !== 'DELETE') return;
 
-  try {
-    const res = await fetch('/admin/dev/delete-database', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert('Database deleted');
-      location.reload();
-    }
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
-}
+        try {
+          const res = await fetch('/admin/dev/delete-database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('Database deleted');
+            location.reload();
+          }
+        } catch (e) {
+          alert('Error: ' + e.message);
+        }
+      }
 
-// ═══════════════════════════════════════════════════════════
-// Initialize
-// ═══════════════════════════════════════════════════════════
+      // ═══════════════════════════════════════════════════════════
+      // Initialize
+      // ═══════════════════════════════════════════════════════════
 
-initWeekSelector();
-refreshJobs();
-setInterval(refreshJobs, 5000);
-setInterval(loadWeekStatus, 10000);
-</script>
+      initWeekSelector();
+      refreshJobs();
+      setInterval(refreshJobs, 5000);
+      setInterval(loadWeekStatus, 10000);
+    </script>

@@ -57,16 +57,24 @@ export async function handleLogin(req: Request, res: Response): Promise<void> {
   const passwordValid = await verifyPassword(password, config.ADMIN_PASSWORD);
 
   if (passwordValid) {
-    req.session.isAuthenticated = true;
-    req.session.username = username;
+    // Regenerate session to prevent session fixation attacks
+    const returnToUrl = req.session.returnTo;
+    req.session.regenerate((err) => {
+      if (err) {
+        res.status(500).render('login', { error: 'Login failed. Please try again.', layout: false });
+        return;
+      }
 
-    // Reset rate limit on successful login
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    resetLoginRateLimit(ip, username);
+      req.session.isAuthenticated = true;
+      req.session.username = username;
 
-    const returnTo = req.session.returnTo || '/admin/dashboard';
-    delete req.session.returnTo;
-    res.redirect(returnTo);
+      // Reset rate limit on successful login
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      resetLoginRateLimit(ip, username);
+
+      const returnTo = returnToUrl || '/admin/dashboard';
+      res.redirect(returnTo);
+    });
     return;
   }
 
@@ -559,12 +567,18 @@ export async function clearData(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // Validate weekId to prevent NoSQL injection
+  if (weekId !== undefined && (typeof weekId !== 'string' || weekId.length === 0)) {
+    res.status(400).json({ success: false, error: 'Invalid weekId format' });
+    return;
+  }
+
   try {
     const results: Record<string, number> = {};
 
     if (collection === 'all' || !collection) {
-      // Clear all collections
-      const query = weekId ? { weekId: { $regex: weekId } } : {};
+      // Clear all collections - use exact match instead of regex
+      const query = weekId ? { weekId } : {};
 
       results.snapshots = (await db.collection('snapshots').deleteMany(query)).deletedCount;
       results.holders = (await db.collection('holders').deleteMany(query)).deletedCount;
@@ -573,8 +587,8 @@ export async function clearData(req: Request, res: Response): Promise<void> {
       results.batches = (await db.collection('batches').deleteMany(query)).deletedCount;
       results.jobs = (await db.collection('jobs').deleteMany(query)).deletedCount;
     } else {
-      // Clear specific collection
-      const query = weekId ? { weekId: { $regex: weekId } } : {};
+      // Clear specific collection - use exact match instead of regex
+      const query = weekId ? { weekId } : {};
       results[collection] = (await db.collection(collection).deleteMany(query)).deletedCount;
     }
 
@@ -809,58 +823,77 @@ export async function approveAndExecuteAirdrop(req: Request, res: Response): Pro
     if (rewardPool && rewardPool !== distribution.config?.rewardPool) {
       const newRewardPoolBigInt = BigInt(rewardPool);
       const totalEligibleBalance = BigInt(distribution.stats?.totalEligibleBalance || '1');
+      const tokenDecimals = getTokenDecimals();
+      const divisor = BigInt(10 ** tokenDecimals);
 
-      // Update all recipients with new reward amounts
+      // Update all recipients with new reward amounts (bulk operation for performance)
       const recipients = await db.collection<Recipient>('recipients')
         .find({ distributionId: distribution._id })
         .toArray();
 
-      for (const recipient of recipients) {
-        const minBalance = BigInt(recipient.balances?.min || '0');
-        const newReward = (minBalance * newRewardPoolBigInt) / totalEligibleBalance;
-        const newRewardFormatted = `${(Number(newReward) / 1e18).toFixed(8)} ${rewardToken || distribution.config?.rewardToken || 'ETH'}`;
+      if (recipients.length > 0) {
+        const recipientBulkOps = recipients.map(recipient => {
+          const minBalance = BigInt(recipient.balances?.min || '0');
+          const newReward = (minBalance * newRewardPoolBigInt) / totalEligibleBalance;
+          // Use BigInt-safe formatting to avoid precision loss
+          const newRewardNum = newReward / divisor;
+          const newRewardRemainder = newReward % divisor;
+          const newRewardFormatted = `${newRewardNum}.${newRewardRemainder.toString().padStart(Number(tokenDecimals), '0').slice(0, 8)} ${rewardToken || distribution.config?.rewardToken || 'ETH'}`;
 
-        await db.collection<Recipient>('recipients').updateOne(
-          { _id: recipient._id },
-          {
-            $set: {
-              reward: newReward.toString(),
-              rewardFormatted: newRewardFormatted,
-              updatedAt: new Date(),
+          return {
+            updateOne: {
+              filter: { _id: recipient._id },
+              update: {
+                $set: {
+                  reward: newReward.toString(),
+                  rewardFormatted: newRewardFormatted,
+                  updatedAt: new Date(),
+                },
+              },
             },
-          }
-        );
+          };
+        });
+
+        await db.collection<Recipient>('recipients').bulkWrite(recipientBulkOps);
       }
 
-      // Update batch totals
+      // Update batch totals (bulk operation for performance)
       const batches = await db.collection<Batch>('batches')
         .find({ distributionId: distribution._id })
         .toArray();
 
-      for (const batch of batches) {
-        let batchTotal = 0n;
-        const updatedRecipients: Array<{ address: string; amount: string }> = [];
+      if (batches.length > 0) {
+        // Create a map of recipients for quick lookup
+        const updatedRecipients = await db.collection<Recipient>('recipients')
+          .find({ distributionId: distribution._id })
+          .toArray();
+        const recipientMap = new Map(updatedRecipients.map(r => [r.address, r.reward]));
 
-        for (const batchRecipient of batch.recipients || []) {
-          const fullRecipient = await db.collection<Recipient>('recipients').findOne({
-            distributionId: distribution._id,
-            address: batchRecipient.address,
-          });
-          const amount = fullRecipient?.reward || '0';
-          batchTotal += BigInt(amount);
-          updatedRecipients.push({ address: batchRecipient.address, amount });
-        }
+        const batchBulkOps = batches.map(batch => {
+          let batchTotal = 0n;
+          const updatedBatchRecipients: Array<{ address: string; amount: string }> = [];
 
-        await db.collection<Batch>('batches').updateOne(
-          { _id: batch._id },
-          {
-            $set: {
-              recipients: updatedRecipients,
-              totalAmount: batchTotal.toString(),
-              updatedAt: new Date(),
-            },
+          for (const batchRecipient of batch.recipients || []) {
+            const amount = recipientMap.get(batchRecipient.address) || '0';
+            batchTotal += BigInt(amount);
+            updatedBatchRecipients.push({ address: batchRecipient.address, amount });
           }
-        );
+
+          return {
+            updateOne: {
+              filter: { _id: batch._id },
+              update: {
+                $set: {
+                  recipients: updatedBatchRecipients,
+                  totalAmount: batchTotal.toString(),
+                  updatedAt: new Date(),
+                },
+              },
+            },
+          };
+        });
+
+        await db.collection<Batch>('batches').bulkWrite(batchBulkOps);
       }
     }
 

@@ -51,13 +51,17 @@ const DEFAULT_API_CONFIG: RateLimitConfig = {
  */
 function cleanupExpiredEntries(): void {
   const now = Date.now();
+  // Use the maximum window size to ensure we don't delete entries too early
+  const maxWindow = Math.max(DEFAULT_LOGIN_CONFIG.windowMs, DEFAULT_API_CONFIG.windowMs);
+
   for (const [key, entry] of rateLimitStore.entries()) {
-    // Remove entries that are past their block period and window
-    if (entry.blockedUntil && entry.blockedUntil < now) {
-      // Check if the entry is also past its window
-      if (entry.firstAttempt + DEFAULT_LOGIN_CONFIG.windowMs < now) {
-        rateLimitStore.delete(key);
-      }
+    // Check if entry is past its window and not blocked
+    const isExpired = entry.firstAttempt + maxWindow < now;
+    const isUnblocked = !entry.blockedUntil || entry.blockedUntil < now;
+
+    // Only delete if both expired AND unblocked (or was never blocked)
+    if (isExpired && isUnblocked) {
+      rateLimitStore.delete(key);
     }
   }
 }
